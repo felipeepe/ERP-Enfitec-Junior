@@ -1,10 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getMembro, listarRegistros, criarRegistro, removerRegistro } from '../lib/api'
+import {
+  getMembro, listarRegistros, criarRegistro, removerRegistro,
+  listarProjetos, listarTarefas,
+} from '../lib/api'
 import { SETORES } from '../lib/setores'
 import {
   hoje, mesAtual, ultimosDias, deslocarMes,
   rotuloMes, rotuloDia, formatarMinutos,
 } from '../lib/datas'
+
+// Natureza da hora. Nem todo trabalho de uma EJ é técnico em projeto —
+// separar isso é o que permite responder "quanto tempo foi para o cliente".
+export const TIPOS_HORA = [
+  ['tecnica', 'Técnica', 'Trabalho em um projeto'],
+  ['administrativa', 'Administrativa', 'Gestão, reuniões internas, processos'],
+  ['evento', 'Evento', 'Feiras, palestras, representação'],
+  ['estudo', 'Estudo', 'Capacitação e treinamento'],
+]
 
 // Atividades registráveis.
 const TIPOS = [
@@ -42,6 +54,9 @@ export default function Registro() {
 
   const [form, setForm] = useState({
     data: hoje(),
+    tipo_hora: 'tecnica',
+    projeto_id: '',
+    tarefa_id: '',
     // Já abre na diretoria da pessoa; ela troca se lançar hora em outra.
     area: membro?.setor || SETORES[0],
     tipo: TIPOS[0],
@@ -52,16 +67,34 @@ export default function Registro() {
   // Registros vindos do banco (via API).
   const [registros, setRegistros] = useState([])
   const [carregando, setCarregando] = useState(true)
+  const [projetos, setProjetos] = useState([])
+  const [tarefas, setTarefas] = useState([])
 
   useEffect(() => {
     listarRegistros()
       .then(setRegistros)
       .catch(() => notificar('Erro ao carregar registros'))
       .finally(() => setCarregando(false))
+    // Projetos visíveis para amarrar a hora técnica.
+    listarProjetos().then(setProjetos).catch(() => {})
   }, [])
+
+  // Ao escolher o projeto, carrega as tarefas dele para a pessoa apontar onde
+  // o tempo foi. É isso que junta o Painel de Horas ao módulo de Projetos.
+  useEffect(() => {
+    if (!form.projeto_id) { setTarefas([]); return }
+    listarTarefas(form.projeto_id)
+      .then((lista) => setTarefas(lista.filter((t) => !t.concluida_em)))
+      .catch(() => setTarefas([]))
+  }, [form.projeto_id])
 
   function update(campo, valor) {
     setForm((f) => ({ ...f, [campo]: valor }))
+  }
+
+  // Trocar de projeto invalida a tarefa escolhida antes.
+  function mudarProjeto(valor) {
+    setForm((f) => ({ ...f, projeto_id: valor, tarefa_id: '' }))
   }
 
   async function handleSubmit(e) {
@@ -75,6 +108,10 @@ export default function Registro() {
       alert('Informe o tempo trabalhado (horas e/ou minutos).')
       return
     }
+    if (form.tipo_hora === 'tecnica' && !form.projeto_id) {
+      alert('Hora técnica precisa estar ligada a um projeto. Escolha o projeto ou mude o tipo da hora.')
+      return
+    }
     try {
       const novo = await criarRegistro({
         data: form.data,
@@ -82,13 +119,16 @@ export default function Registro() {
         tipo: form.tipo,
         minutos,
         descricao: form.descricao || null,
+        tipo_hora: form.tipo_hora,
+        projeto_id: form.tipo_hora === 'tecnica' ? Number(form.projeto_id) : null,
+        tarefa_id: form.tipo_hora === 'tecnica' && form.tarefa_id ? Number(form.tarefa_id) : null,
       })
       setRegistros((r) => [novo, ...r])
       // Mantém os selects e a data; limpa tempo e descrição para o próximo lançamento.
       setForm((f) => ({ ...f, horas: '', minutos: '', descricao: '' }))
       notificar('Registro adicionado ✓')
-    } catch {
-      alert('Não foi possível salvar o registro. Verifique sua conexão.')
+    } catch (err) {
+      alert(err?.message || 'Não foi possível salvar o registro. Verifique sua conexão.')
     }
   }
 
@@ -161,6 +201,63 @@ export default function Registro() {
           <p className="panel-sub">Informe quanto tempo trabalhou e no que foi destinado.</p>
 
           <form onSubmit={handleSubmit} className="form">
+            {/* Natureza da hora: é ela que decide se o lançamento se liga a um projeto */}
+            <div className="field">
+              <span className="field-label">Tipo de hora</span>
+              <div className="tipos-hora" role="group" aria-label="Tipo de hora">
+                {TIPOS_HORA.map(([valor, rotulo, ajuda]) => (
+                  <button
+                    key={valor}
+                    type="button"
+                    className={`tipo-hora ${form.tipo_hora === valor ? 'ativo' : ''}`}
+                    onClick={() => update('tipo_hora', valor)}
+                  >
+                    <strong>{rotulo}</strong>
+                    <span>{ajuda}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {form.tipo_hora === 'tecnica' && (
+              <div className="row">
+                <label className="field">
+                  <span className="field-label">Projeto</span>
+                  <select className="input" value={form.projeto_id} required
+                    onChange={(e) => mudarProjeto(e.target.value)}>
+                    <option value="">Escolha o projeto…</option>
+                    {projetos.map((p) => (
+                      <option key={p.id} value={p.id}>{p.codigo} · {p.nome}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="field-label">
+                    Tarefa <span className="field-opcional">(opcional)</span>
+                  </span>
+                  <select className="input" value={form.tarefa_id}
+                    disabled={!form.projeto_id}
+                    onChange={(e) => update('tarefa_id', e.target.value)}>
+                    <option value="">
+                      {form.projeto_id
+                        ? (tarefas.length ? 'Sem tarefa específica' : 'Nenhuma tarefa aberta')
+                        : 'Escolha o projeto antes'}
+                    </option>
+                    {tarefas.map((t) => (
+                      <option key={t.id} value={t.id}>#{t.numero} · {t.titulo}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+
+            {form.tipo_hora === 'tecnica' && projetos.length === 0 && (
+              <p className="form-nota">
+                Você não tem projetos visíveis. Peça à gestão para definir sua diretoria,
+                ou lance a hora como administrativa, evento ou estudo.
+              </p>
+            )}
+
             <div className="row">
               <label className="field">
                 <span className="field-label">Data</span>
@@ -258,7 +355,17 @@ export default function Registro() {
                             <span className="list-projeto">{r.tipo}</span>
                           </div>
                           <div className="list-tags">
+                            <span className={`selo-hora selo-${r.tipo_hora}`}>
+                              {(TIPOS_HORA.find(([v]) => v === r.tipo_hora) || [, r.tipo_hora])[1]}
+                            </span>
                             <span className="tag">{r.area}</span>
+                            {r.projeto_codigo && (
+                              <span className="tag">
+                                {r.projeto_codigo}
+                                {r.tarefa_numero ? `-${r.tarefa_numero}` : ''}
+                                {r.tarefa_titulo ? ` · ${r.tarefa_titulo}` : ''}
+                              </span>
+                            )}
                           </div>
                           {r.descricao && <p className="list-desc">{r.descricao}</p>}
                         </div>

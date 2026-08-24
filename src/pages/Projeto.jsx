@@ -9,6 +9,7 @@ import {
 import { rotuloData, hoje, formatarMinutos } from '../lib/datas'
 import TarefaPainel from '../components/TarefaPainel.jsx'
 import PainelProjeto from '../components/PainelProjeto.jsx'
+import Discussao from '../components/Discussao.jsx'
 
 const PRIORIDADES = [
   ['urgente', 'Urgente'],
@@ -38,6 +39,8 @@ export default function Projeto() {
   const [novaEtiqueta, setNovaEtiqueta] = useState({ nome: '', cor: '#1565c0' })
   const [mostrarConfig, setMostrarConfig] = useState(false)
   const [vista, setVista] = useState('quadro')
+  // Com 3 tarefas o quadro se explica; com 200, sem filtro ele é inutilizável.
+  const [filtros, setFiltros] = useState({ responsavel: '', prioridade: '', etiqueta: '', texto: '' })
 
   const tarefaAberta = params.get('tarefa')
 
@@ -154,9 +157,18 @@ export default function Projeto() {
   }
 
   // Só as tarefas de topo vão para o quadro; subtarefas aparecem no detalhe.
-  const doQuadro = tarefas.filter((t) => !t.tarefa_pai_id)
-  const total = doQuadro.length
-  const concluidas = doQuadro.filter((t) => t.concluida_em).length
+  const todasDoTopo = tarefas.filter((t) => !t.tarefa_pai_id)
+  const total = todasDoTopo.length
+  const concluidas = todasDoTopo.filter((t) => t.concluida_em).length
+
+  const filtrando = Object.values(filtros).some(Boolean)
+  const doQuadro = todasDoTopo.filter((t) => {
+    if (filtros.responsavel && !t.responsaveis.some((r) => String(r.id) === filtros.responsavel)) return false
+    if (filtros.prioridade && t.prioridade !== filtros.prioridade) return false
+    if (filtros.etiqueta && !t.etiquetas.some((e) => String(e.id) === filtros.etiqueta)) return false
+    if (filtros.texto && !t.titulo.toLowerCase().includes(filtros.texto.toLowerCase())) return false
+    return true
+  })
 
   return (
     <>
@@ -181,6 +193,7 @@ export default function Projeto() {
           <div className="alternador" role="group" aria-label="Modo de visualização">
             <button className={vista === 'quadro' ? 'ativo' : ''} onClick={() => setVista('quadro')}>Quadro</button>
             <button className={vista === 'painel' ? 'ativo' : ''} onClick={() => setVista('painel')}>Painel</button>
+            <button className={vista === 'discussao' ? 'ativo' : ''} onClick={() => setVista('discussao')}>Discussão</button>
           </div>
           <select className="input input--compacto" value={projeto.situacao}
             onChange={(e) => mudarSituacao(e.target.value)} aria-label="Situação do projeto">
@@ -258,6 +271,58 @@ export default function Projeto() {
       )}
 
       {vista === 'painel' && <PainelProjeto projeto={projeto} tarefas={tarefas} />}
+
+      {vista === 'discussao' && (
+        <Discussao
+          tipo="projeto"
+          alvoId={projeto.id}
+          titulo={`Discussão de ${projeto.nome}`}
+          subtitulo="Quem enxerga o projeto participa. Para assunto de uma tarefa específica, comente nela."
+        />
+      )}
+
+      {vista === 'quadro' && (
+        <div className="filtros-quadro">
+          <input className="input input--compacto" placeholder="🔎 filtrar por título"
+            value={filtros.texto}
+            onChange={(e) => setFiltros((f) => ({ ...f, texto: e.target.value }))} />
+
+          <select className="input input--compacto" value={filtros.responsavel}
+            onChange={(e) => setFiltros((f) => ({ ...f, responsavel: e.target.value }))}
+            aria-label="Filtrar por responsável">
+            <option value="">Todos os responsáveis</option>
+            {equipe.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+          </select>
+
+          <select className="input input--compacto" value={filtros.prioridade}
+            onChange={(e) => setFiltros((f) => ({ ...f, prioridade: e.target.value }))}
+            aria-label="Filtrar por prioridade">
+            <option value="">Todas as prioridades</option>
+            {PRIORIDADES.map(([v, r]) => <option key={v} value={v}>{r}</option>)}
+          </select>
+
+          {projeto.etiquetas.length > 0 && (
+            <select className="input input--compacto" value={filtros.etiqueta}
+              onChange={(e) => setFiltros((f) => ({ ...f, etiqueta: e.target.value }))}
+              aria-label="Filtrar por etiqueta">
+              <option value="">Todas as etiquetas</option>
+              {projeto.etiquetas.map((et) => <option key={et.id} value={et.id}>{et.nome}</option>)}
+            </select>
+          )}
+
+          {filtrando && (
+            <>
+              <span className="filtros-contagem">
+                {doQuadro.length} de {total}
+              </span>
+              <button className="btn btn-ghost"
+                onClick={() => setFiltros({ responsavel: '', prioridade: '', etiqueta: '', texto: '' })}>
+                Limpar
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ---------- Quadro kanban ---------- */}
       <div className="kanban" hidden={vista !== 'quadro'}>

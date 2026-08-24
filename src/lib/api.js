@@ -67,6 +67,13 @@ function paraFront(r) {
     tipo: r.atividade,
     minutos: r.minutos,
     descricao: r.descricao,
+    tipo_hora: r.tipo_hora || 'tecnica',
+    projeto_id: r.projeto_id ?? null,
+    projeto_nome: r.projeto_nome ?? null,
+    projeto_codigo: r.projeto_codigo ?? null,
+    tarefa_id: r.tarefa_id ?? null,
+    tarefa_titulo: r.tarefa_titulo ?? null,
+    tarefa_numero: r.tarefa_numero ?? null,
   }
 }
 
@@ -75,10 +82,13 @@ export async function listarRegistros() {
   return lista.map(paraFront)
 }
 
-export async function criarRegistro({ data, area, tipo, minutos, descricao }) {
+export async function criarRegistro({ data, area, tipo, minutos, descricao, tipo_hora, projeto_id, tarefa_id }) {
   const r = await req('/registros', {
     method: 'POST',
-    body: { data, setor: area, atividade: tipo, minutos, descricao },
+    body: {
+      data, setor: area, atividade: tipo, minutos, descricao,
+      tipo_hora, projeto_id, tarefa_id,
+    },
   })
   return paraFront(r)
 }
@@ -309,4 +319,58 @@ export async function enviarAnexo(tipo, id, arquivo) {
 
 export function removerAnexo(id) {
   return req(`/anexos/${id}`, { method: 'DELETE' })
+}
+
+// ============================ PERFIL ============================
+
+export function obterPerfil() {
+  return req('/perfil')
+}
+
+export function salvarPerfil(dados) {
+  return req('/perfil', { method: 'POST', body: dados })
+}
+
+export function trocarSenhaPropria(senha_atual, nova_senha) {
+  return req('/perfil/senha', { method: 'POST', body: { senha_atual, nova_senha } })
+}
+
+export function obterPerfilDe(id) {
+  return req(`/perfil/${id}`)
+}
+
+// Nome do evento que avisa a interface de que o membro guardado mudou.
+export const EVENTO_MEMBRO = 'rh:membro-mudou'
+
+// Atualiza o membro guardado e avisa quem o exibe. O localStorage não é
+// reativo: sem o evento, o cabeçalho continuaria com o nome e a foto antigos
+// até a página ser recarregada.
+export function atualizarMembroLocal(parcial) {
+  const atual = getMembro() || {}
+  const novo = { ...atual, ...parcial }
+  localStorage.setItem(MEMBRO_KEY, JSON.stringify(novo))
+  window.dispatchEvent(new CustomEvent(EVENTO_MEMBRO, { detail: novo }))
+  return novo
+}
+
+// ============================ MENSAGENS ============================
+
+export function listarConversas() {
+  return req('/mensagens')
+}
+
+export function contarNaoLidas() {
+  return req('/mensagens/nao-lidas')
+}
+
+export function abrirConversa(membroId) {
+  return req(`/mensagens/${membroId}`)
+}
+
+export function enviarMensagem(membroId, texto) {
+  return req(`/mensagens/${membroId}`, { method: 'POST', body: { texto } })
+}
+
+export function removerMensagem(id) {
+  return req(`/mensagens/item/${id}`, { method: 'DELETE' })
 }
