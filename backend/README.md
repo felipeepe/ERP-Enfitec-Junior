@@ -17,7 +17,7 @@ backend/
   lib/               # código interno (protegido por .htaccess)
     bootstrap.php    # config + conexão + helpers
     jwt.php          # tokens JWT (HS256)
-    auth.php         # link mágico e identificação do usuário
+    auth.php         # identificação do usuário logado e checagem de papel
 ```
 
 ## Rodar localmente (com PHP instalado)
@@ -34,25 +34,35 @@ Testar: `http://localhost:8000/health` deve responder `{"status":"ok"}`.
 > Sem PHP na máquina? Instale em https://www.php.net/downloads (ou XAMPP).
 > A API também pode ser testada direto no servidor da UFRGS.
 
-## Fluxo de autenticação (link mágico, sem senha)
+## Fluxo de autenticação (e-mail + senha)
 
-1. `POST /auth/solicitar-acesso` `{ "email": "..." }` → se autorizado e ativo, gera o link.
-   - Em produção (`email_ativo => true`), envia por e-mail com a função `mail()` do PHP.
-   - Em dev, grava o link em `lib/ultimo-link.txt` para você copiar.
-2. `POST /auth/verificar` `{ "token": "..." }` → devolve o `access_token` de sessão.
-3. Demais rotas usam o cabeçalho `Authorization: Bearer <access_token>`.
+1. `POST /auth/login-senha` `{ "email": "...", "senha": "..." }` → confere o hash
+   (`password_verify`) e devolve o `access_token` (JWT HS256) junto com os dados do membro.
+2. Se o membro vier com `senha_provisoria: true`, o front obriga a troca em
+   `POST /auth/trocar-senha` `{ "nova_senha": "..." }` antes de liberar o resto do app.
+3. As rotas autenticadas usam o cabeçalho `Authorization: Bearer <access_token>`
+   (`/health` é a exceção pública). O token expira em `sessao_expira_min` — 7 dias por
+   padrão — e **não há rota de refresh**: expirou, o usuário faz login de novo.
 
 ## Endpoints
 
+Nas rotas de gestão, `mes` é **obrigatório** (formato `AAAA-MM`, senão 400) e `setor` é
+opcional — omitido, traz todos os setores.
+
 | Método | Rota | Quem acessa | O quê |
 |---|---|---|---|
-| POST | `/auth/solicitar-acesso` | público | pede o link mágico |
-| POST | `/auth/verificar` | público | troca o link por sessão |
+| GET  | `/health` | público | checagem de saúde (não exige token) |
+| POST | `/auth/login-senha` | público | troca e-mail + senha por uma sessão |
+| POST | `/auth/trocar-senha` | logado | define a senha pessoal (mín. 6 caracteres) |
 | GET  | `/auth/me` | logado | dados do usuário |
 | GET  | `/registros` | logado | lista os próprios registros |
 | POST | `/registros` | logado | cria um registro |
 | DELETE | `/registros/{id}` | logado | remove um registro seu |
-| GET  | `/gestao/resumo?mes=AAAA-MM` | **gestor** | horas por membro e setor |
+| GET  | `/gestao/resumo?mes=AAAA-MM&setor=` | **gestor** | horas por membro e setor |
+| GET  | `/gestao/analise?mes=AAAA-MM&setor=` | **gestor** | totais por setor e por atividade |
+| GET  | `/gestao/membros` | **gestor** | lista membros e status de acesso |
+| POST | `/gestao/membros` | **gestor** | cadastra/atualiza membro (senha inicial provisória) |
+| POST | `/gestao/membros/{id}/ativo` | **gestor** | ativa/desativa o acesso |
 
 ## Publicar na UFRGS (produção)
 
@@ -60,8 +70,7 @@ Testar: `http://localhost:8000/health` deve responder `{"status":"ok"}`.
 2. Copiar `config.example.php` para `config.php` e preencher:
    - `db_dsn` = `mysql:host=SEU_HOST;dbname=SEU_BANCO;charset=utf8mb4`, `db_user`, `db_pass`;
    - `jwt_secret` = um valor aleatório longo;
-   - `frontend_url` = endereço do front publicado;
-   - `email_ativo => true` (para enviar os links por e-mail).
+   - `frontend_url` = endereço do front publicado (origem liberada no CORS).
 3. Enviar a pasta `backend/` para o servidor (ex.: `public_html/api/`).
 4. Cadastrar os membros: `php seed.php email@enfitecjunior.com "Nome" membro`
    (ou inserir direto pelo phpMyAdmin).
@@ -73,3 +82,7 @@ Testar: `http://localhost:8000/health` deve responder `{"status":"ok"}`.
 - Novo membro: `INSERT` na tabela `membros` (ou `php seed.php ...`).
 - Tornar gestor (Gestão de Pessoas): `role = 'gestor'`.
 - Desligar alguém: `ativo = 0` (bloqueia o acesso e **preserva o histórico**).
+
+> A conta com `role = 'gestor'` **apenas monitora** as horas da equipe — ela não lança
+> as próprias. Por isso o front envia o gestor direto ao painel e não mostra o
+> formulário de registro.

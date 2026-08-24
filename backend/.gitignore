@@ -1,4 +1,4 @@
 config.php
 *.db
 *.sqlite
-lib/ultimo-link.txt
+arquivos/

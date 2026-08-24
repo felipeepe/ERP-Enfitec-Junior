@@ -3,6 +3,13 @@
 // alternativa ao import do schema.sql. Rode:  php migrar.php
 declare(strict_types=1);
 
+// Só por linha de comando: alterar schema não pode ser algo que se dispara
+// abrindo uma URL.
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 $CONFIG = require __DIR__ . '/config.php';
 require_once __DIR__ . '/lib/bootstrap.php'; // já cria $PDO a partir do config
 
@@ -14,6 +21,7 @@ if ($sqlite) {
         email TEXT NOT NULL UNIQUE,
         nome TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'membro',
+        setor TEXT,
         ativo INTEGER NOT NULL DEFAULT 1,
         senha_hash TEXT,
         senha_provisoria INTEGER NOT NULL DEFAULT 0,
@@ -45,11 +53,37 @@ if ($sqlite) {
 foreach ([
     'senha_hash' => $sqlite ? 'TEXT' : 'VARCHAR(255) NULL',
     'senha_provisoria' => $sqlite ? 'INTEGER NOT NULL DEFAULT 0' : 'TINYINT(1) NOT NULL DEFAULT 0',
+    'setor' => $sqlite ? 'TEXT' : 'VARCHAR(60) NULL',
 ] as $coluna => $tipo) {
     try {
         $PDO->exec("ALTER TABLE membros ADD COLUMN $coluna $tipo");
     } catch (Throwable $e) {
         // Coluna já existe — ignora.
+    }
+}
+
+// ---- Tabelas do ERP (Projetos, Documentação, marcos, OKRs, anexos) ----
+require_once __DIR__ . '/lib/schema_erp.php';
+
+foreach (schema_erp($sqlite) as $ddl) {
+    $PDO->exec($ddl);
+}
+
+// As colunas vêm ANTES dos índices: há índice sobre coluna acrescentada aqui, e
+// criá-lo primeiro falharia silenciosamente dentro do catch.
+foreach (colunas_extras_erp($sqlite) as $alvo => $tipo) {
+    [$tabela, $coluna] = explode('.', $alvo);
+    try {
+        $PDO->exec("ALTER TABLE $tabela ADD COLUMN $coluna $tipo");
+    } catch (Throwable $e) {
+        // Coluna já existe.
+    }
+}
+foreach (indices_erp($sqlite) as $ddl) {
+    try {
+        $PDO->exec($ddl);
+    } catch (Throwable $e) {
+        // Índice já existe.
     }
 }
 

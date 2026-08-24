@@ -1,6 +1,8 @@
 .env
 .claude/
 node_modules/
+dist/
+testes/capturas/
+testes/.tmp-*
 backend/config.php
 backend/*.db
-backend/lib/ultimo-link.txt

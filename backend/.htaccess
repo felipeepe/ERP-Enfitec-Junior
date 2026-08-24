@@ -7,8 +7,10 @@
     RewriteRule ^ index.php [QSA,L]
 </IfModule>
 
-# Protege arquivos sensíveis (config e banco SQLite).
-<FilesMatch "(^config\.php$|\.db$|\.sqlite$)">
+# Protege config, banco, scripts de linha de comando e dumps de schema.
+# Os scripts também se defendem sozinhos (PHP_SAPI !== 'cli'), porque este
+# .htaccess é ignorado quando o servidor não permite AllowOverride.
+<FilesMatch "(^config\.php$|^seed\.php$|^migrar\.php$|\.db$|\.sqlite$|\.sql$)">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
