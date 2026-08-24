@@ -44,6 +44,8 @@ const TEXTO_MSG = 'Mensagem enviada pelo teste'
 
 async function limpar() {
   rmSync('testes/.tmp-anexo.txt', { force: true })
+  // Cronômetro deixado rodando por um teste interrompido lançaria hora falsa.
+  await chamar('/cronometro', { metodo: 'DELETE', token: sessao.token }).catch(() => {})
 
   // Apaga as mensagens que esta execução enviou, senão o chat vai acumulando
   // uma cópia a cada rodada da suíte.
@@ -77,6 +79,8 @@ await pagina.setViewport({ width: 1600, height: 1000 })
 await pagina.setDragInterception(true)
 pagina.on('console', (m) => { if (m.type() === 'error') errosPagina.push('console: ' + m.text()) })
 pagina.on('pageerror', (e) => errosPagina.push('exceção: ' + e.message))
+// confirm() e alert() travam o puppeteer se ninguém responder.
+pagina.on('dialog', (d) => d.accept().catch(() => {}))
 
 const foto = async (nome) => { if (FOTOS) await pagina.screenshot({ path: `${PASTA}/${nome}.png` }) }
 // Clica no botão cujo texto bate — mais legível que decorar seletores.
@@ -260,6 +264,114 @@ try {
   await esperar(1400)
   verificar('busca devolve resultados', (await pagina.$$('.busca-item')).length > 0)
   await foto('06-busca')
+
+  // ============================ Vistas: lista e calendário ============================
+  secao('Vistas do projeto')
+  // A seção anterior terminou na Documentação; volta para o projeto.
+  await pagina.goto(APP + `/projetos/${idProjeto}`, { waitUntil: 'networkidle2' })
+  await esperar(1800)
+
+  // Dá prazo à tarefa para ela ter onde aparecer no calendário.
+  const daqui = new Date()
+  daqui.setDate(daqui.getDate() + 3)
+  const prazoTeste = daqui.toISOString().slice(0, 10)
+  const doProjeto = await chamar(`/projetos/${idProjeto}/tarefas`, { token: sessao.token })
+  for (const t of doProjeto.dados || []) {
+    await chamar(`/tarefas/${t.id}`, { metodo: 'POST', token: sessao.token, corpo: { prazo: prazoTeste } })
+  }
+  await pagina.reload({ waitUntil: 'networkidle2' })
+  await esperar(1800)
+
+  await clicarTexto('.alternador button', 'Lista')
+  await esperar(1400)
+  verificar('vista em lista renderiza a tabela', !!(await pagina.$('.tabela-lista')))
+  verificar('lista vem agrupada por status', (await pagina.$$('.linha-grupo')).length > 0)
+
+  const primeiraAntes = await pagina.$eval('.linha-tarefa-lista', (n) => n.textContent)
+  await pagina.evaluate(() => {
+    const b = [...document.querySelectorAll('.th-ordenar')].find((x) => x.textContent.startsWith('Tarefa'))
+    b.click()
+  })
+  await esperar(700)
+  verificar('clicar no cabeçalho reordena',
+    (await pagina.$eval('.linha-tarefa-lista', (n) => n.textContent)) !== primeiraAntes
+    || (await pagina.$$('.linha-tarefa-lista')).length === 1, 'ou só há uma tarefa')
+
+  await pagina.select('.panel-head select', 'responsavel')
+  await esperar(700)
+  verificar('trocar o agrupamento refaz os grupos', (await pagina.$$('.linha-grupo')).length > 0)
+  await foto('11-lista')
+
+  await clicarTexto('.alternador button', 'Calendário')
+  await esperar(1400)
+  verificar('calendário desenha a grade do mês', (await pagina.$$('.cal-dia')).length >= 28)
+  verificar('cabeçalho tem os sete dias', (await pagina.$$('.cal-cabecalho')).length === 7)
+  verificar('marca o dia de hoje', !!(await pagina.$('.cal-dia.e-hoje')))
+  const noCalendario = await pagina.$$('.cal-tarefa')
+  verificar('tarefas com prazo aparecem na grade', noCalendario.length > 0, `${noCalendario.length}`)
+  await foto('12-calendario')
+
+  await clicarTexto('.alternador button', 'Quadro')
+  await esperar(900)
+
+  // ============================ Kanban em tela de toque ============================
+  secao('Kanban no celular')
+  await pagina.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true })
+  await esperar(1200)
+
+  const moverVisivel = await pagina.evaluate(() => {
+    const el = document.querySelector('.cartao-mover')
+    return el ? getComputedStyle(el).display !== 'none' : false
+  })
+  verificar('botões de mover aparecem em tela estreita', moverVisivel)
+  verificar('colunas empilham em vez de rolar na horizontal',
+    await pagina.evaluate(() => getComputedStyle(document.querySelector('.kanban')).flexDirection === 'column'))
+
+  const statusAntes = await pagina.$eval('.cartao-mover-status', (n) => n.textContent.trim())
+  // Usa a direção que estiver disponível: a tarefa pode já estar na primeira ou
+  // na última coluna, e aí o botão daquele lado está corretamente desabilitado.
+  const clicou = await pagina.evaluate(() => {
+    const b = [...document.querySelectorAll('.cartao-mover button')].find((x) => !x.disabled)
+    if (b) b.click()
+    return !!b
+  })
+  verificar('há uma direção possível para mover', clicou)
+  await esperar(1800)
+  await pagina.reload({ waitUntil: 'networkidle2' })
+  await esperar(1800)
+  const statusDepois = await pagina.$eval('.cartao-mover-status', (n) => n.textContent.trim())
+  verificar('mover pelo botão troca de coluna e persiste',
+    statusDepois !== statusAntes, `${statusAntes} → ${statusDepois}`)
+  await foto('13-kanban-celular')
+
+  await pagina.setViewport({ width: 1600, height: 1000, isMobile: false, hasTouch: false })
+  await esperar(900)
+
+  // ============================ Cronômetro ============================
+  secao('Cronômetro')
+  await pagina.goto(APP + `/projetos/${idProjeto}`, { waitUntil: 'networkidle2' })
+  await esperar(1600)
+  await pagina.click('.cartao')
+  await esperar(1600)
+
+  await clicarTexto('.drawer-acoes button', '▶ Iniciar')
+  await esperar(1800)
+  verificar('barra do cronômetro aparece', !!(await pagina.$('.barra-cronometro')))
+  verificar('barra mostra o relógio correndo',
+    /\d{2}:\d{2}/.test(await pagina.$eval('.cron-tempo', (n) => n.textContent)))
+  verificar('painel da tarefa indica que está contando', !!(await pagina.$('.cron-nesta')))
+  await foto('14-cronometro')
+
+  // Fecha o drawer e confirma que a barra segue em outra tela.
+  await pagina.keyboard.press('Escape')
+  await esperar(600)
+  await pagina.goto(APP + '/documentacao', { waitUntil: 'networkidle2' })
+  await esperar(1600)
+  verificar('cronômetro continua visível ao trocar de seção', !!(await pagina.$('.barra-cronometro')))
+
+  await clicarTexto('.barra-cronometro button', 'Descartar')
+  await esperar(1400)
+  verificar('descartar some com a barra', !(await pagina.$('.barra-cronometro')))
 
   // ============================ Filtros e discussão do quadro ============================
   secao('Filtros e discussão do projeto')

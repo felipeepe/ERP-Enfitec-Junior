@@ -351,6 +351,47 @@ for (const r of [horaEstudo, horaNaTarefa]) {
   if (r.dados?.id) await chamar(`/registros/${r.dados.id}`, { metodo: 'DELETE', token: gestor.token })
 }
 
+// ============================ Cronômetro ============================
+secao('Cronômetro de tarefa')
+
+const semCron = await chamar('/cronometro', { token: gestor.token })
+verificar('sem cronômetro devolve null', semCron.dados === null)
+
+const iniciado = await chamar(`/cronometro/${tarefaId}`, { metodo: 'POST', token: gestor.token })
+verificar('iniciar devolve 201', iniciado.status === 201)
+
+const rodando = await chamar('/cronometro', { token: gestor.token })
+verificar('cronômetro aparece rodando', rodando.dados?.tarefa_id === tarefaId)
+verificar('devolve os segundos contados pelo SERVIDOR (relógio do cliente pode estar torto)',
+  typeof rodando.dados?.segundos === 'number')
+verificar('traz o código da tarefa para a barra flutuante', !!rodando.dados?.codigo)
+
+// Começar noutra tarefa substitui: uma pessoa só tem um cronômetro.
+const subId = (await chamar(`/projetos/${projetoId}/tarefas`, { token: gestor.token }))
+  .dados.find((t) => t.id !== tarefaId)?.id
+if (subId) {
+  await chamar(`/cronometro/${subId}`, { metodo: 'POST', token: gestor.token })
+  const trocado = await chamar('/cronometro', { token: gestor.token })
+  verificar('iniciar noutra tarefa substitui o anterior', trocado.dados?.tarefa_id === subId)
+}
+
+const parado = await chamar('/cronometro/parar', { metodo: 'POST', token: gestor.token, corpo: {} })
+verificar('parar com menos de um minuto não lança hora', parado.dados?.registrado === false)
+verificar('parar limpa o cronômetro',
+  (await chamar('/cronometro', { token: gestor.token })).dados === null)
+
+const pararSemNada = await chamar('/cronometro/parar', { metodo: 'POST', token: gestor.token, corpo: {} })
+verificar('parar sem cronômetro devolve 404', pararSemNada.status === 404)
+
+await chamar(`/cronometro/${tarefaId}`, { metodo: 'POST', token: gestor.token })
+const descartou = await chamar('/cronometro', { metodo: 'DELETE', token: gestor.token })
+verificar('descartar devolve 204', descartou.status === 204)
+
+if (membro) {
+  const alheio = await chamar(`/cronometro/999999`, { metodo: 'POST', token: membro.token })
+  verificar('não dá para cronometrar tarefa fora do escopo', alheio.status === 404)
+}
+
 // ============================ Discussão de projeto ============================
 secao('Discussão de projeto')
 
