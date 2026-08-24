@@ -8,7 +8,8 @@ import puppeteer from 'puppeteer-core'
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import {
   APP, acharNavegador, verificar, secao, encerrar,
-  exigirBackend, exigirFrontend, esperar, chamar, entrar, CONTA_GESTOR,
+  exigirBackend, exigirFrontend, esperar, chamar, entrar,
+  CONTA_GESTOR, CONTA_MEMBRO,
 } from './ajuda.mjs'
 
 const VER = process.argv.includes('--ver')
@@ -39,8 +40,24 @@ await chamar(`/documentos/${docCriado.dados.id}`, {
   corpo: { conteudo: '# Página de teste\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```js\nconsole.log(2)\n```\n\nSegunda versão.' },
 })
 
+const TEXTO_MSG = 'Mensagem enviada pelo teste'
+
 async function limpar() {
   rmSync('testes/.tmp-anexo.txt', { force: true })
+
+  // Apaga as mensagens que esta execução enviou, senão o chat vai acumulando
+  // uma cópia a cada rodada da suíte.
+  try {
+    const conversas = await chamar('/mensagens', { token: sessao.token })
+    for (const c of conversas.dados || []) {
+      const thread = await chamar(`/mensagens/${c.membro.id}`, { token: sessao.token })
+      for (const msg of thread.dados?.mensagens || []) {
+        if (msg.minha && msg.texto === TEXTO_MSG) {
+          await chamar(`/mensagens/item/${msg.id}`, { metodo: 'DELETE', token: sessao.token })
+        }
+      }
+    }
+  } catch { /* limpeza é melhor-esforço */ }
   for (const id of criados.documentos) {
     await chamar(`/documentos/${id}`, { metodo: 'DELETE', token: sessao.token }).catch(() => {})
   }
@@ -85,7 +102,7 @@ try {
   verificar('login leva ao Painel de Horas', pagina.url().includes('/horas'))
 
   const abas = await pagina.$$eval('.topnav-item', (n) => n.map((x) => x.textContent.trim()))
-  verificar('menu tem as três seções', abas.length === 3, abas.join(' | '))
+  verificar('menu tem as quatro seções', abas.length === 4, abas.join(' | '))
   verificar('busca global está no topo', !!(await pagina.$('.busca-campo')))
   await foto('01-horas')
 
@@ -243,6 +260,122 @@ try {
   await esperar(1400)
   verificar('busca devolve resultados', (await pagina.$$('.busca-item')).length > 0)
   await foto('06-busca')
+
+  // ============================ Filtros e discussão do quadro ============================
+  secao('Filtros e discussão do projeto')
+  await pagina.goto(APP + `/projetos/${idProjeto}`, { waitUntil: 'networkidle2' })
+  await esperar(1800)
+  verificar('barra de filtros aparece no quadro', !!(await pagina.$('.filtros-quadro')))
+
+  await pagina.type('.filtros-quadro input', 'zzz-nao-existe')
+  await esperar(700)
+  verificar('filtro por título esconde o que não casa', (await pagina.$$('.cartao')).length === 0)
+  verificar('mostra a contagem do filtro', !!(await pagina.$('.filtros-contagem')))
+  await clicarTexto('.filtros-quadro button', 'Limpar')
+  await esperar(700)
+  verificar('limpar filtro traz os cartões de volta', (await pagina.$$('.cartao')).length > 0)
+
+  await clicarTexto('.alternador button', 'Discussão')
+  await esperar(1400)
+  verificar('aba de discussão do projeto abre', !!(await pagina.$('.linha-form input')))
+  await pagina.type('.panel .linha-form input', 'Mensagem de teste na discussão')
+  await clicarTexto('.panel .linha-form button', 'Enviar')
+  await esperar(1800)
+  verificar('comentário no projeto aparece', (await pagina.$$('.discussao li')).length > 0)
+  await foto('07-discussao')
+
+  // ============================ Tipo de hora ============================
+  // O formulário de lançamento é de MEMBRO: a conta da gestão só monitora.
+  // Por isso esta parte troca de sessão em vez de pular a verificação.
+  secao('Tipo de hora no lançamento (como membro)')
+  await pagina.evaluate(() => localStorage.clear())
+  await pagina.goto(APP, { waitUntil: 'networkidle2' })
+  await pagina.type('input[type="email"]', CONTA_MEMBRO.email)
+  await pagina.type('input[type="password"]', CONTA_MEMBRO.senha)
+  await pagina.click('button[type="submit"]')
+  await esperar(2200)
+
+  const trocouSenha = pagina.url().includes('/trocar-senha')
+  if (trocouSenha) {
+    verificar('membro com senha provisória cai na troca obrigatória', true, 'pulando o resto desta seção')
+  } else {
+    await pagina.goto(APP + '/horas', { waitUntil: 'networkidle2' })
+    await esperar(1600)
+
+    const tipos = await pagina.$$('.tipo-hora')
+    verificar('quatro tipos de hora oferecidos', tipos.length === 4)
+    const temCampo = (rotulo) => pagina.$$eval('.field-label',
+      (n, r) => n.some((x) => x.textContent.trim().startsWith(r)), rotulo)
+
+    verificar('hora técnica pede o projeto', await temCampo('Projeto'))
+
+    await clicarTexto('.tipo-hora strong', 'Estudo')
+    await esperar(700)
+    verificar('trocar para Estudo esconde a escolha de projeto', !(await temCampo('Projeto')))
+
+    await clicarTexto('.tipo-hora strong', 'Técnica')
+    await esperar(700)
+    verificar('voltar para Técnica traz a escolha de projeto', await temCampo('Projeto'))
+    await foto('08-tipo-hora')
+  }
+
+  // Volta para a conta de gestão para o resto da suíte.
+  await pagina.evaluate(() => localStorage.clear())
+  await pagina.goto(APP, { waitUntil: 'networkidle2' })
+  await pagina.type('input[type="email"]', CONTA_GESTOR.email)
+  await pagina.type('input[type="password"]', CONTA_GESTOR.senha)
+  await pagina.click('button[type="submit"]')
+  await esperar(2200)
+
+  // ============================ Perfil ============================
+  secao('Perfil')
+  await pagina.goto(APP + '/perfil', { waitUntil: 'networkidle2' })
+  await esperar(1600)
+  verificar('tela de perfil carrega', !!(await pagina.$('.perfil-topo')))
+  verificar('oferece as cores de avatar', (await pagina.$$('.cor')).length > 1)
+  verificar('mostra os dados definidos pela gestão', (await pagina.$$('.dados-conta li')).length === 3)
+
+  const campoApelido = await pagina.$('.panel .form input')
+  await campoApelido.type('Apelido de teste')
+  await clicarTexto('.panel button', 'Salvar perfil')
+  await esperar(1800)
+  verificar('salvar perfil reflete no cabeçalho',
+    (await pagina.$eval('.topbar-name', (n) => n.textContent)).includes('Apelido de teste'))
+  await foto('09-perfil')
+
+  // Desfaz para não deixar rastro.
+  await pagina.evaluate(() => {
+    const i = document.querySelector('.panel .form input')
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+    setter.call(i, '')
+    i.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await clicarTexto('.panel button', 'Salvar perfil')
+  await esperar(1500)
+
+  // ============================ Mensagens ============================
+  secao('Mensagens diretas')
+  await pagina.goto(APP + '/mensagens', { waitUntil: 'networkidle2' })
+  await esperar(1600)
+  verificar('tela de mensagens carrega', !!(await pagina.$('.chat')))
+
+  await clicarTexto('.chat-lista button', '+ Nova')
+  await esperar(700)
+  const candidatos = await pagina.$$('.chat-candidatos .chat-item')
+  verificar('lista pessoas para começar conversa', candidatos.length > 0, `${candidatos.length} pessoa(s)`)
+
+  if (candidatos.length) {
+    await candidatos[0].click()
+    await esperar(1600)
+    verificar('conversa abre', !!(await pagina.$('.chat-mensagens')))
+
+    await pagina.type('.chat-envio input', TEXTO_MSG)
+    await pagina.click('.chat-envio button')
+    await esperar(2000)
+    const baloes = await pagina.$$('.balao.minha')
+    verificar('mensagem enviada aparece como minha', baloes.length > 0)
+    await foto('10-chat')
+  }
 
   // ============================ Regressão ============================
   secao('Regressão')

@@ -301,6 +301,157 @@ verificar('painel devolve os agregados',
   painel.status === 200 && typeof painel.dados?.tarefas_abertas === 'number')
 verificar('painel traz a carga por pessoa', Array.isArray(painel.dados?.carga))
 
+// ============================ Tipo de hora ============================
+secao('Tipo de hora e vínculo com projeto')
+
+const horaTecnicaSemProjeto = await chamar('/registros', {
+  metodo: 'POST', token: gestor.token,
+  corpo: { data: '2026-08-01', setor: 'Projetos', atividade: 'Pesquisa', minutos: 60, tipo_hora: 'tecnica' },
+})
+verificar('hora técnica sem projeto devolve 400', horaTecnicaSemProjeto.status === 400)
+
+const tipoInvalido = await chamar('/registros', {
+  metodo: 'POST', token: gestor.token,
+  corpo: { data: '2026-08-01', setor: 'Projetos', atividade: 'Pesquisa', minutos: 60, tipo_hora: 'inventado' },
+})
+verificar('tipo de hora inválido devolve 400', tipoInvalido.status === 400)
+
+const horaEstudo = await chamar('/registros', {
+  metodo: 'POST', token: gestor.token,
+  corpo: { data: '2026-08-01', setor: 'Projetos', atividade: 'Pesquisa', minutos: 90, tipo_hora: 'estudo' },
+})
+verificar('hora de estudo não exige projeto', horaEstudo.status === 201)
+verificar('hora não técnica não guarda projeto', horaEstudo.dados?.projeto_id === null)
+
+const horaNaTarefa = await chamar('/registros', {
+  metodo: 'POST', token: gestor.token,
+  corpo: {
+    data: '2026-08-01', setor: 'Projetos', atividade: 'Desenvolvimento de projeto',
+    minutos: 120, tipo_hora: 'tecnica', projeto_id: projetoId, tarefa_id: tarefaId,
+  },
+})
+verificar('hora técnica ligada a projeto e tarefa', horaNaTarefa.status === 201)
+verificar('resposta traz o nome do projeto e da tarefa',
+  !!horaNaTarefa.dados?.projeto_nome && !!horaNaTarefa.dados?.tarefa_titulo)
+
+const tarefaDeOutroProjeto = await chamar('/registros', {
+  metodo: 'POST', token: gestor.token,
+  corpo: {
+    data: '2026-08-01', setor: 'Projetos', atividade: 'Pesquisa',
+    minutos: 30, tipo_hora: 'tecnica', projeto_id: projetoId, tarefa_id: 999999,
+  },
+})
+verificar('tarefa que não é do projeto devolve 400', tarefaDeOutroProjeto.status === 400)
+
+const projetoComHoras = await chamar(`/projetos/${projetoId}`, { token: gestor.token })
+verificar('projeto soma as horas lançadas nas tarefas dele',
+  projetoComHoras.dados?.minutos_lancados === 120, `${projetoComHoras.dados?.minutos_lancados} min`)
+
+for (const r of [horaEstudo, horaNaTarefa]) {
+  if (r.dados?.id) await chamar(`/registros/${r.dados.id}`, { metodo: 'DELETE', token: gestor.token })
+}
+
+// ============================ Discussão de projeto ============================
+secao('Discussão de projeto')
+
+const discussao = await chamar(`/comentarios/projeto/${projetoId}`, {
+  metodo: 'POST', token: gestor.token, corpo: { texto: `${MARCA} debate do projeto` },
+})
+verificar('comentar num projeto devolve 201', discussao.status === 201)
+
+const lidos = await chamar(`/comentarios/projeto/${projetoId}`, { token: gestor.token })
+verificar('discussão do projeto é listada', lidos.dados?.length === 1)
+verificar('comentário traz dados do avatar de quem escreveu',
+  'cor_avatar' in (lidos.dados?.[0] || {}) && 'membro_apelido' in (lidos.dados?.[0] || {}))
+
+// ============================ Perfil ============================
+secao('Perfil')
+
+const perfil = await chamar('/perfil', { token: gestor.token })
+verificar('perfil próprio carrega', perfil.status === 200 && perfil.dados?.email === CONTA_GESTOR.email)
+
+const salvo = await chamar('/perfil', {
+  metodo: 'POST', token: gestor.token,
+  corpo: { apelido: 'Gestão', bio: 'Conta de teste', cor_avatar: '#1565c0' },
+})
+verificar('salvar perfil devolve o perfil atualizado', salvo.dados?.apelido === 'Gestão')
+
+const fotoRuim = await chamar('/perfil', {
+  metodo: 'POST', token: gestor.token, corpo: { foto: '<svg onload=alert(1)>' },
+})
+verificar('foto que não é data URI de imagem é recusada', fotoRuim.status === 400)
+
+const fotoGigante = await chamar('/perfil', {
+  metodo: 'POST', token: gestor.token,
+  corpo: { foto: 'data:image/png;base64,' + 'A'.repeat(400 * 1024) },
+})
+verificar('foto acima do limite é recusada', fotoGigante.status === 400)
+
+const senhaErradaPerfil = await chamar('/perfil/senha', {
+  metodo: 'POST', token: gestor.token,
+  corpo: { senha_atual: 'nao-e-essa', nova_senha: 'outrasenha' },
+})
+verificar('trocar senha com a atual errada devolve 403', senhaErradaPerfil.status === 403)
+
+// Restaura o perfil para não deixar rastro do teste.
+await chamar('/perfil', {
+  metodo: 'POST', token: gestor.token,
+  corpo: { apelido: '', bio: '', cor_avatar: '' },
+})
+
+// ============================ Mensagens ============================
+secao('Mensagens diretas')
+
+if (membro) {
+  const enviada = await chamar(`/mensagens/${membro.membro.id}`, {
+    metodo: 'POST', token: gestor.token, corpo: { texto: `${MARCA} olá` },
+  })
+  verificar('enviar mensagem devolve 201', enviada.status === 201)
+
+  const paraSiMesmo = await chamar(`/mensagens/${gestor.membro.id}`, {
+    metodo: 'POST', token: gestor.token, corpo: { texto: 'eu comigo' },
+  })
+  verificar('mensagem para si mesmo devolve 400', paraSiMesmo.status === 400)
+
+  const vaziaMsg = await chamar(`/mensagens/${membro.membro.id}`, {
+    metodo: 'POST', token: gestor.token, corpo: { texto: '  ' },
+  })
+  verificar('mensagem vazia devolve 400', vaziaMsg.status === 400)
+
+  const pendentes = await chamar('/mensagens/nao-lidas', { token: membro.token })
+  verificar('destinatário vê a mensagem como não lida', pendentes.dados?.total > 0)
+
+  const conversa = await chamar(`/mensagens/${gestor.membro.id}`, { token: membro.token })
+  verificar('conversa traz as mensagens dos dois lados', conversa.dados?.mensagens?.length > 0)
+  verificar('cada mensagem sabe de quem é',
+    conversa.dados?.mensagens?.every((x) => typeof x.minha === 'boolean'))
+
+  const depoisDeLer = await chamar('/mensagens/nao-lidas', { token: membro.token })
+  verificar('abrir a conversa zera o não lido', depoisDeLer.dados?.total === 0)
+
+  const alheia = await chamar(`/mensagens/item/${enviada.dados.id}`, { metodo: 'DELETE', token: membro.token })
+  verificar('não dá para apagar mensagem de outra pessoa (403)', alheia.status === 403)
+
+  await chamar(`/mensagens/item/${enviada.dados.id}`, { metodo: 'DELETE', token: gestor.token })
+}
+
+// ============================ Força bruta ============================
+secao('Freio contra tentativa em massa')
+
+// E-mail inexistente de propósito: travar uma conta real atrapalharia o resto.
+const alvo = `forca.bruta.${Date.now()}@example.com`
+let ultimoStatus = 0
+for (let i = 0; i < 6; i++) {
+  const r = await chamar('/auth/login-senha', { metodo: 'POST', corpo: { email: alvo, senha: 'chute' } })
+  ultimoStatus = r.status
+}
+verificar('a 6ª tentativa seguida é barrada com 429', ultimoStatus === 429)
+
+const outraConta = await chamar('/auth/login-senha', {
+  metodo: 'POST', corpo: { email: CONTA_GESTOR.email, senha: CONTA_GESTOR.senha },
+})
+verificar('o bloqueio é por e-mail e não derruba as outras contas', outraConta.status === 200)
+
 // ============================ Limpeza ============================
 secao('Limpeza')
 
