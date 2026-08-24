@@ -76,3 +76,32 @@ export function formatarMinutos(total) {
   const m = total % 60
   return `${h}:${String(m).padStart(2, '0')}`
 }
+
+// Células de um mês para desenhar em grade de 7 colunas, incluindo as sobras
+// das semanas do começo e do fim. Usada pelo calendário de prazos e pela agenda.
+export function gradeDoMes(ym) {
+  const [ano, mes] = ym.split('-').map(Number)
+  const primeiro = new Date(ano, mes - 1, 1)
+  const inicio = new Date(primeiro)
+  inicio.setDate(1 - primeiro.getDay()) // recua até o domingo
+
+  const celulas = []
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(inicio)
+    d.setDate(inicio.getDate() + i)
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    celulas.push({ iso, dia: d.getDate(), doMes: d.getMonth() === mes - 1 })
+    // Para de desenhar assim que o mês acabou e a semana fechou no sábado.
+    if (i >= 27 && d.getMonth() !== mes - 1 && d.getDay() === 6) break
+  }
+  return celulas
+}
+
+// Primeiro e último dia de um mês 'AAAA-MM', em 'AAAA-MM-DD'.
+export function limitesDoMes(ym) {
+  const [ano, mes] = ym.split('-').map(Number)
+  const ultimo = new Date(ano, mes, 0).getDate()
+  return [`${ym}-01`, `${ym}-${String(ultimo).padStart(2, '0')}`]
+}
+
+export const DIAS_CURTOS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']

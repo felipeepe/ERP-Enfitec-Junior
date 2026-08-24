@@ -105,8 +105,13 @@ try {
   await esperar(2200)
   verificar('login leva ao Painel de Horas', pagina.url().includes('/horas'))
 
+  // Verifica as seções pelo nome, não pela contagem: a cada seção nova a
+  // asserção por número quebrava sem que nada estivesse errado.
   const abas = await pagina.$$eval('.topnav-item', (n) => n.map((x) => x.textContent.trim()))
-  verificar('menu tem as quatro seções', abas.length === 4, abas.join(' | '))
+  const esperadas = ['Painel de Horas', 'Projetos', 'Documentação', 'Agenda', 'Mensagens']
+  const faltando = esperadas.filter((e) => !abas.some((a) => a.startsWith(e)))
+  verificar('menu traz todas as seções', faltando.length === 0,
+    faltando.length ? `faltam: ${faltando.join(', ')}` : abas.join(' | '))
   verificar('busca global está no topo', !!(await pagina.$('.busca-campo')))
   await foto('01-horas')
 
@@ -488,6 +493,59 @@ try {
     verificar('mensagem enviada aparece como minha', baloes.length > 0)
     await foto('10-chat')
   }
+
+  // ============================ Agenda ============================
+  secao('Agenda')
+  await pagina.goto(APP + '/agenda', { waitUntil: 'networkidle2' })
+  await esperar(1800)
+  verificar('agenda carrega a grade do mês', (await pagina.$$('.cal-dia')).length >= 28)
+  verificar('tem o alternador equipe/meus', (await pagina.$$('.agenda-barra .alternador button')).length === 2)
+
+  await clicarTexto('.agenda-barra button', '+ Novo compromisso')
+  await esperar(800)
+  verificar('formulário de compromisso abre', !!(await pagina.$('.drawer form')))
+
+  await pagina.type('.drawer form input', 'Reunião criada pelo teste')
+  await pagina.evaluate(() => {
+    // Marca "dia inteiro" para não depender de campo de hora.
+    const c = document.querySelector('.opcao-linha input[type="checkbox"]')
+    if (c && !c.checked) c.click()
+  })
+  await esperar(400)
+  await clicarTexto('.drawer form button', 'Criar compromisso')
+  await esperar(2200)
+
+  const naGrade = await pagina.$$eval('.cal-tarefa',
+    (n) => n.some((x) => x.textContent.includes('Reunião criada pelo teste')))
+  verificar('compromisso aparece na grade', naGrade)
+  verificar('aparece também na lista de próximos',
+    await pagina.$$eval('.proximo', (n) => n.some((x) => x.textContent.includes('Reunião criada pelo teste'))))
+  await foto('15-agenda')
+
+  await pagina.evaluate(() => {
+    const b = [...document.querySelectorAll('.cal-tarefa')]
+      .find((x) => x.textContent.includes('Reunião criada pelo teste'))
+    if (b) b.click()
+  })
+  await esperar(1400)
+  verificar('detalhe do compromisso abre', !!(await pagina.$('.participantes')))
+  verificar('pergunta se você vai',
+    await pagina.$$eval('.field-label', (n) => n.some((x) => x.textContent.includes('Você vai?'))))
+
+  await clicarTexto('.drawer .alternador button', 'Não vou')
+  await esperar(1400)
+  verificar('resposta de presença fica registrada',
+    await pagina.$$eval('.selo-presenca', (n) => n.some((x) => x.textContent.includes('não vai'))))
+  await foto('16-compromisso')
+
+  // Remove o compromisso criado pelo teste.
+  await pagina.evaluate(() => {
+    const b = [...document.querySelectorAll('.drawer-acoes .icon-btn')].find((x) => x.textContent === '🗑')
+    if (b) b.click()
+  })
+  await esperar(1600)
+  verificar('compromisso removido some da grade',
+    !(await pagina.$$eval('.cal-tarefa', (n) => n.some((x) => x.textContent.includes('Reunião criada pelo teste')))))
 
   // ============================ Regressão ============================
   secao('Regressão')

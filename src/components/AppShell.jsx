@@ -12,6 +12,7 @@ const ABAS = [
   { para: '/horas', rotulo: 'Painel de Horas' },
   { para: '/projetos', rotulo: 'Projetos' },
   { para: '/documentacao', rotulo: 'Documentação' },
+  { para: '/agenda', rotulo: 'Agenda' },
   { para: '/mensagens', rotulo: 'Mensagens' },
 ]
 
@@ -37,6 +38,7 @@ export default function AppShell({ children }) {
   const largo = /^\/projetos\/\d+/.test(pathname)
     || pathname.startsWith('/documentacao')
     || pathname.startsWith('/mensagens')
+    || pathname.startsWith('/agenda')
 
   useEffect(() => {
     let vivo = true

@@ -1210,3 +1210,55 @@ body {
   .acoes-projeto { width: 100%; flex-wrap: wrap; }
   .topnav { -webkit-overflow-scrolling: touch; }
 }
+
+/* ---------- Agenda ---------- */
+.agenda-barra {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  margin-bottom: 18px;
+}
+.agenda-barra .btn-primary { margin-left: auto; }
+.agenda-layout { display: grid; grid-template-columns: 1fr 320px; gap: 16px; align-items: start; }
+
+.evento-icone { flex-shrink: 0; font-size: 11px; }
+.cal-tarefa.evento-reuniao { background: var(--brand-soft); border-color: #c6d8ee; }
+.cal-tarefa.evento-visita { background: #fdf3e0; border-color: #f0dcb4; }
+.cal-tarefa.evento-evento { background: #f3e8f7; border-color: #e0cbe8; }
+.cal-tarefa.evento-treinamento { background: #e3f2e6; border-color: #c4e2cb; }
+.cal-tarefa.cal-prazo { border-style: dashed; }
+
+.proximos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.proximo {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); cursor: pointer; font: inherit; text-align: left;
+}
+.proximo:hover { border-color: var(--accent); background: var(--brand-soft); }
+.proximo-data {
+  display: flex; flex-direction: column; align-items: center; flex-shrink: 0;
+  font-size: 13px; font-weight: 700; color: var(--brand); line-height: 1.25;
+}
+.proximo-data span { font-size: 11px; font-weight: 600; color: var(--muted); }
+.proximo-corpo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.proximo-corpo strong {
+  font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.proximo-corpo span { font-size: 12px; color: var(--muted); }
+
+.participantes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.participantes li { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.participante-nome { flex: 1; }
+.selo-presenca {
+  font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px;
+}
+.selo-vai { background: #e3f2e6; color: #2e7d32; }
+.selo-nao_vai { background: #fdeaea; color: #b3261e; }
+.selo-convidado { background: var(--bg); color: var(--muted); }
+
+.opcao-linha { display: flex; align-items: center; gap: 9px; font-size: 14px; cursor: pointer; }
+
+@media (max-width: 1040px) {
+  .agenda-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 860px) {
+  .agenda-barra .btn-primary { margin-left: 0; width: 100%; }
+}

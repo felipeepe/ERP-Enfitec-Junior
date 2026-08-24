@@ -1,28 +1,8 @@
 import { useMemo, useState } from 'react'
-import { hoje, mesAtual, deslocarMes, rotuloMes } from '../lib/datas'
+import { hoje, mesAtual, deslocarMes, rotuloMes, gradeDoMes, DIAS_CURTOS } from '../lib/datas'
 
 // Prazos num mês. Para uma EJ que trabalha por entrega, "o que vence quando" é
 // mais legível numa grade do que em coluna de status.
-const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
-
-// Todas as células do mês, incluindo as sobras das semanas do começo e do fim.
-function gradeDoMes(ym) {
-  const [ano, mes] = ym.split('-').map(Number)
-  const primeiro = new Date(ano, mes - 1, 1)
-  const inicio = new Date(primeiro)
-  inicio.setDate(1 - primeiro.getDay()) // volta até o domingo
-
-  const celulas = []
-  for (let i = 0; i < 42; i++) {
-    const d = new Date(inicio)
-    d.setDate(inicio.getDate() + i)
-    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    celulas.push({ iso, dia: d.getDate(), doMes: d.getMonth() === mes - 1 })
-    // Para de desenhar quando já passou do mês e fechou a semana.
-    if (i >= 27 && d.getMonth() !== mes - 1 && d.getDay() === 6) break
-  }
-  return celulas
-}
 
 export default function VistaCalendario({ projeto, tarefas, aoAbrir, aoRemarcar }) {
   const [mes, setMes] = useState(mesAtual())
@@ -69,7 +49,7 @@ export default function VistaCalendario({ projeto, tarefas, aoAbrir, aoRemarcar 
       </div>
 
       <div className="calendario">
-        {DIAS.map((d) => <div key={d} className="cal-cabecalho">{d}</div>)}
+        {DIAS_CURTOS.map((d) => <div key={d} className="cal-cabecalho">{d}</div>)}
 
         {celulas.map((c) => (
           <div

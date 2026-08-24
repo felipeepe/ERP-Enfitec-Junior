@@ -212,6 +212,36 @@ function schema_erp(bool $sqlite): array
         excluido_em $dt
     )$fim";
 
+    // ---------- Agenda ----------
+    // Compromissos da EJ: reunião, visita técnica, evento, treinamento.
+    // Guarda data e hora separadas de 'dia_inteiro' porque feira e imersão
+    // ocupam o dia sem ter horário, e forçar 00:00 mentiria no calendário.
+    $t[] = "CREATE TABLE IF NOT EXISTS eventos (
+        id $pk,
+        titulo {$vc(200)} NOT NULL,
+        descricao $txt,
+        tipo {$vc(20)} NOT NULL DEFAULT 'reuniao',
+        local {$vc(200)},
+        data $data NOT NULL,
+        data_fim $data,
+        hora_inicio {$vc(5)},
+        hora_fim {$vc(5)},
+        dia_inteiro $bool,
+        setor {$vc(60)},
+        projeto_id $int,
+        criado_por $int,
+        criado_em $dt NOT NULL DEFAULT $agora,
+        excluido_em $dt
+    )$fim";
+
+    // 'situacao': convidado, vai, nao_vai. Quem criou já entra como confirmado.
+    $t[] = "CREATE TABLE IF NOT EXISTS evento_participantes (
+        evento_id $int NOT NULL,
+        membro_id $int NOT NULL,
+        situacao {$vc(12)} NOT NULL DEFAULT 'convidado',
+        PRIMARY KEY (evento_id, membro_id)
+    )$fim";
+
     // ---------- Cronômetro de tarefa ----------
     // Fica no servidor, não no navegador: se o cronômetro morasse no
     // localStorage, fechar a aba ou trocar de aparelho perderia trabalho real
@@ -258,6 +288,8 @@ function indices_erp(bool $sqlite): array
         "CREATE INDEX {$se}idx_msg_destino ON mensagens(destinatario_id, lida_em)",
         "CREATE INDEX {$se}idx_tentativa ON tentativas_login(email, criado_em)",
         "CREATE INDEX {$se}idx_cronometro_membro ON cronometros(membro_id)",
+        "CREATE INDEX {$se}idx_evento_data ON eventos(data)",
+        "CREATE INDEX {$se}idx_participante_membro ON evento_participantes(membro_id)",
         "CREATE INDEX {$se}idx_registro_tipo ON registros(membro_id, tipo_hora)",
         "CREATE INDEX {$se}idx_tarefa_projeto ON tarefas(projeto_id, status_id)",
         "CREATE INDEX {$se}idx_tarefa_pai ON tarefas(tarefa_pai_id)",

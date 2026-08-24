@@ -396,3 +396,38 @@ export function pararCronometro(dados = {}) {
 export function descartarCronometro() {
   return req('/cronometro', { method: 'DELETE' })
 }
+
+// ============================ AGENDA ============================
+
+export function listarEventos(de, ate) {
+  return req(`/eventos?de=${de}&ate=${ate}`)
+}
+
+export function criarEvento(dados) {
+  return req('/eventos', { method: 'POST', body: dados })
+}
+
+export function obterEvento(id) {
+  return req(`/eventos/${id}`)
+}
+
+export function atualizarEvento(id, dados) {
+  return req(`/eventos/${id}`, { method: 'POST', body: dados })
+}
+
+export function removerEvento(id) {
+  return req(`/eventos/${id}`, { method: 'DELETE' })
+}
+
+export function definirPresenca(id, situacao) {
+  return req(`/eventos/${id}/presenca`, { method: 'POST', body: { situacao } })
+}
+
+export function definirParticipantes(id, participantes) {
+  return req(`/eventos/${id}/participantes`, { method: 'POST', body: { participantes } })
+}
+
+// Compromissos e prazos de tarefa no mesmo intervalo.
+export function obterAgenda(de, ate, apenasMeus = false) {
+  return req(`/agenda?de=${de}&ate=${ate}${apenasMeus ? '&meus=1' : ''}`)
+}

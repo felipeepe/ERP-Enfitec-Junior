@@ -36,11 +36,15 @@ const senhaErrada = await chamar('/auth/login-senha', {
 })
 verificar('senha errada devolve 401', senhaErrada.status === 401)
 
+// E-mail novo a cada execução: um endereço fixo acumularia as falhas de todas
+// as rodadas e acabaria barrado pelo freio de força bruta, quebrando esta
+// verificação por motivo que não tem nada a ver com o que ela testa.
 const inexistente = await chamar('/auth/login-senha', {
-  metodo: 'POST', corpo: { email: 'ninguem@enfitecjunior.com', senha: 'x' },
+  metodo: 'POST', corpo: { email: `ninguem.${Date.now()}@example.com`, senha: 'x' },
 })
 verificar('e-mail inexistente devolve a MESMA mensagem (evita enumerar usuários)',
-  inexistente.status === 401 && inexistente.dados?.erro === senhaErrada.dados?.erro)
+  inexistente.status === 401 && inexistente.dados?.erro === senhaErrada.dados?.erro,
+  `${inexistente.status} · ${inexistente.dados?.erro}`)
 
 const semToken = await chamar('/auth/me')
 verificar('rota logada sem token devolve 401', semToken.status === 401)
@@ -475,6 +479,94 @@ if (membro) {
 
   await chamar(`/mensagens/item/${enviada.dados.id}`, { metodo: 'DELETE', token: gestor.token })
 }
+
+// ============================ Agenda ============================
+secao('Agenda')
+
+const evento = await chamar('/eventos', {
+  metodo: 'POST', token: gestor.token,
+  corpo: {
+    titulo: `${MARCA} Reunião`, tipo: 'reuniao', data: '2026-09-10',
+    hora_inicio: '19:00', hora_fim: '20:30', local: 'Sala 201',
+    participantes: membro ? [membro.membro.id] : [],
+  },
+})
+verificar('criar compromisso devolve 201', evento.status === 201)
+const eventoId = evento.dados?.id
+
+verificar('quem cria já entra como confirmado',
+  evento.dados?.participantes?.find((p) => p.id === gestor.membro.id)?.situacao === 'vai')
+if (membro) {
+  verificar('convidado entra sem resposta',
+    evento.dados?.participantes?.find((p) => p.id === membro.membro.id)?.situacao === 'convidado')
+}
+
+const semData = await chamar('/eventos', {
+  metodo: 'POST', token: gestor.token, corpo: { titulo: 'sem data' },
+})
+verificar('compromisso sem data devolve 400', semData.status === 400)
+
+const fimAntes = await chamar('/eventos', {
+  metodo: 'POST', token: gestor.token,
+  corpo: { titulo: 'invertido', data: '2026-09-10', data_fim: '2026-09-01' },
+})
+verificar('data final antes da inicial devolve 400', fimAntes.status === 400)
+
+const noMes = await chamar('/eventos?de=2026-09-01&ate=2026-09-30', { token: gestor.token })
+verificar('compromisso aparece no intervalo pedido',
+  noMes.dados?.some((e) => e.id === eventoId))
+
+const foraDoMes = await chamar('/eventos?de=2026-10-01&ate=2026-10-31', { token: gestor.token })
+verificar('não aparece fora do intervalo',
+  !foraDoMes.dados?.some((e) => e.id === eventoId))
+
+if (membro) {
+  const resposta = await chamar(`/eventos/${eventoId}/presenca`, {
+    metodo: 'POST', token: membro.token, corpo: { situacao: 'nao_vai' },
+  })
+  verificar('convidado responde a presença', resposta.status === 200)
+
+  const conferido = await chamar(`/eventos/${eventoId}`, { token: gestor.token })
+  verificar('a resposta fica registrada',
+    conferido.dados?.participantes?.find((p) => p.id === membro.membro.id)?.situacao === 'nao_vai')
+
+  // Refazer a lista de convidados não pode apagar quem já respondeu.
+  await chamar(`/eventos/${eventoId}/participantes`, {
+    metodo: 'POST', token: gestor.token, corpo: { participantes: [membro.membro.id] },
+  })
+  const depois = await chamar(`/eventos/${eventoId}`, { token: gestor.token })
+  verificar('refazer a lista preserva quem já respondeu',
+    depois.dados?.participantes?.find((p) => p.id === membro.membro.id)?.situacao === 'nao_vai')
+
+  const alheio = await chamar(`/eventos/${eventoId}`, {
+    metodo: 'POST', token: membro.token, corpo: { titulo: 'sequestrado' },
+  })
+  verificar('só quem criou (ou gestor) altera o compromisso', alheio.status === 403)
+}
+
+const situacaoRuim = await chamar(`/eventos/${eventoId}/presenca`, {
+  metodo: 'POST', token: gestor.token, corpo: { situacao: 'talvez' },
+})
+verificar('situação de presença inválida devolve 400', situacaoRuim.status === 400)
+
+// A agenda combina compromissos e prazos de tarefa no mesmo intervalo.
+const agenda = await chamar('/agenda?de=2026-09-01&ate=2026-09-30', { token: gestor.token })
+verificar('agenda devolve eventos e prazos',
+  Array.isArray(agenda.dados?.eventos) && Array.isArray(agenda.dados?.prazos))
+verificar('agenda inclui o compromisso criado',
+  agenda.dados?.eventos?.some((e) => e.id === eventoId))
+
+const soMeus = await chamar('/agenda?de=2026-09-01&ate=2026-09-30&meus=1', { token: gestor.token })
+verificar('filtro "só os meus" traz o que eu participo',
+  soMeus.dados?.eventos?.some((e) => e.id === eventoId))
+
+const intervaloRuim = await chamar('/agenda?de=2026-09-30&ate=2026-09-01', { token: gestor.token })
+verificar('intervalo invertido devolve 400', intervaloRuim.status === 400)
+
+await chamar(`/eventos/${eventoId}`, { metodo: 'DELETE', token: gestor.token })
+const apagado = await chamar('/eventos?de=2026-09-01&ate=2026-09-30', { token: gestor.token })
+verificar('compromisso removido some da agenda',
+  !apagado.dados?.some((e) => e.id === eventoId))
 
 // ============================ Força bruta ============================
 secao('Freio contra tentativa em massa')

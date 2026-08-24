@@ -17,6 +17,13 @@ if (!function_exists('str_contains')) {
     }
 }
 
+// ---- Fuso ----
+// O PHP assume UTC quando o date.timezone não está definido, e boa parte da
+// hospedagem não define. Sem isto, das 21h à meia-noite o servidor já está em
+// amanhã: compromisso marcado some do dia, tarefa que vence hoje aparece
+// atrasada e concluida_em grava três horas no futuro.
+date_default_timezone_set('America/Sao_Paulo');
+
 // ---- Config ----
 $config_path = __DIR__ . '/../config.php';
 if (!file_exists($config_path)) {

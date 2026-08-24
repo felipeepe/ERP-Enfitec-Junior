@@ -339,6 +339,7 @@ require __DIR__ . '/lib/rotas_projetos.php';
 require __DIR__ . '/lib/rotas_documentos.php';   // define documento_visivel(), usada abaixo
 require __DIR__ . '/lib/rotas_anexos.php';
 require __DIR__ . '/lib/rotas_perfil.php';
+require __DIR__ . '/lib/rotas_agenda.php';
 
 // Nenhuma rota casou
 erro('Rota não encontrada: ' . $metodo . ' ' . $rota, 404);
