@@ -199,6 +199,28 @@ function schema_erp(bool $sqlite): array
         PRIMARY KEY (projeto_id, resultado_id)
     )$fim";
 
+    // ---------- Mensagens diretas ----------
+    // Conversa 1-a-1. Sem sala nem grupo: numa EJ de 40 pessoas o par
+    // remetente/destinatário resolve, e evita toda a modelagem de canal.
+    $t[] = "CREATE TABLE IF NOT EXISTS mensagens (
+        id $pk,
+        remetente_id $int NOT NULL,
+        destinatario_id $int NOT NULL,
+        texto $txt NOT NULL,
+        criado_em $dt NOT NULL DEFAULT $agora,
+        lida_em $dt,
+        excluido_em $dt
+    )$fim";
+
+    // ---------- Controle de tentativas de acesso ----------
+    // Guarda só as falhas, para atrasar quem está tentando adivinhar senha.
+    $t[] = "CREATE TABLE IF NOT EXISTS tentativas_login (
+        id $pk,
+        email {$vc(255)} NOT NULL,
+        origem {$vc(60)},
+        criado_em $dt NOT NULL DEFAULT $agora
+    )$fim";
+
     // ---------- Anexos ----------
     $t[] = "CREATE TABLE IF NOT EXISTS anexos (
         id $pk,
@@ -221,6 +243,10 @@ function indices_erp(bool $sqlite): array
 {
     $se = $sqlite ? 'IF NOT EXISTS ' : '';
     return [
+        "CREATE INDEX {$se}idx_msg_par ON mensagens(remetente_id, destinatario_id)",
+        "CREATE INDEX {$se}idx_msg_destino ON mensagens(destinatario_id, lida_em)",
+        "CREATE INDEX {$se}idx_tentativa ON tentativas_login(email, criado_em)",
+        "CREATE INDEX {$se}idx_registro_tipo ON registros(membro_id, tipo_hora)",
         "CREATE INDEX {$se}idx_tarefa_projeto ON tarefas(projeto_id, status_id)",
         "CREATE INDEX {$se}idx_tarefa_pai ON tarefas(tarefa_pai_id)",
         "CREATE INDEX {$se}idx_resp_membro ON tarefa_responsaveis(membro_id)",
@@ -236,8 +262,25 @@ function indices_erp(bool $sqlite): array
 // Colunas acrescentadas a tabelas que já existiam.
 function colunas_extras_erp(bool $sqlite): array
 {
+    $int = $sqlite ? 'INTEGER' : 'INT NULL';
+    $txt = $sqlite ? 'TEXT' : 'TEXT NULL';
+    $vc = fn(int $n) => $sqlite ? 'TEXT' : "VARCHAR($n) NULL";
+
     return [
-        // Liga a hora lançada à tarefa — é o que junta os dois módulos num ERP só.
-        'registros.tarefa_id' => $sqlite ? 'INTEGER' : 'INT NULL',
+        // Liga a hora lançada à tarefa e ao projeto — junta os dois módulos num ERP só.
+        'registros.tarefa_id' => $int,
+        'registros.projeto_id' => $int,
+        // Natureza da hora: nem todo trabalho da EJ é técnico em projeto.
+        'registros.tipo_hora' => $sqlite ? "TEXT NOT NULL DEFAULT 'tecnica'" : "VARCHAR(20) NOT NULL DEFAULT 'tecnica'",
+
+        // ---- Perfil ----
+        'membros.apelido' => $vc(60),      // como a pessoa quer ser chamada
+        'membros.bio' => $txt,
+        'membros.telefone' => $vc(30),
+        'membros.cor_avatar' => $vc(20),   // usada quando não há foto
+        // A foto é guardada como data URI já redimensionada no navegador. Evita
+        // o problema de URL assinada expirando numa imagem que aparece em toda
+        // tela, e a 128px o custo é de poucos KB por pessoa.
+        'membros.foto' => $txt,
     ];
 }

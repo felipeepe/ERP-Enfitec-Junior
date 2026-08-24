@@ -21,6 +21,18 @@ function filtro_doc(array $membro): array
     return [" AND (setor IS NULL OR setor IN ($marcas))", $setores];
 }
 
+// Comentário herda a permissão do que está sendo comentado.
+function comentario_alvo_visivel(PDO $pdo, array $membro, string $tipo, int $alvo): void
+{
+    if ($tipo === 'tarefa') {
+        tarefa_visivel($pdo, $membro, $alvo);
+    } elseif ($tipo === 'projeto') {
+        projeto_visivel($pdo, $membro, $alvo);
+    } else {
+        documento_visivel($pdo, $membro, $alvo);
+    }
+}
+
 function documento_visivel(PDO $pdo, array $membro, int $id): array
 {
     $st = $pdo->prepare('SELECT * FROM documentos WHERE id = ? AND excluido_em IS NULL');
@@ -121,10 +133,18 @@ if (preg_match('#^/versoes/(\d+)$#', $rota, $mm) && $metodo === 'GET') {
 if (preg_match('#^/documentos/(\d+)/tarefas$#', $rota, $mm) && $metodo === 'POST') {
     $m = exigir_login($PDO, $CONFIG);
     $doc = documento_visivel($PDO, $m, (int) $mm[1]);
+    $pedidas = campo_lista_int(corpo_json(), 'tarefas');
+
+    // Valida TUDO antes de apagar. Se a checagem ficasse dentro do laço, uma
+    // tarefa fora do escopo encerraria a requisição com os vínculos antigos já
+    // removidos — o front receberia erro e assumiria que nada mudou.
+    foreach ($pedidas as $tarefaId) {
+        tarefa_visivel($PDO, $m, $tarefaId);
+    }
+
     $PDO->prepare('DELETE FROM documento_tarefas WHERE documento_id = ?')->execute([(int) $doc['id']]);
     $ins = $PDO->prepare('INSERT INTO documento_tarefas (documento_id, tarefa_id) VALUES (?, ?)');
-    foreach (campo_lista_int(corpo_json(), 'tarefas') as $tarefaId) {
-        tarefa_visivel($PDO, $m, $tarefaId); // não deixa ligar a tarefa fora do escopo
+    foreach ($pedidas as $tarefaId) {
         $ins->execute([(int) $doc['id'], $tarefaId]);
     }
     responder(['ok' => true]);
@@ -201,13 +221,15 @@ if (preg_match('#^/documentos/(\d+)$#', $rota, $mm) && $metodo === 'DELETE') {
 
 // ============================ COMENTÁRIOS ============================
 
-if (preg_match('#^/comentarios/(tarefa|documento)/(\d+)$#', $rota, $mm) && $metodo === 'GET') {
+if (preg_match('#^/comentarios/(tarefa|documento|projeto)/(\d+)$#', $rota, $mm) && $metodo === 'GET') {
     $m = exigir_login($PDO, $CONFIG);
     $tipo = $mm[1];
     $alvo = (int) $mm[2];
-    $tipo === 'tarefa' ? tarefa_visivel($PDO, $m, $alvo) : documento_visivel($PDO, $m, $alvo);
+    comentario_alvo_visivel($PDO, $m, $tipo, $alvo);
 
-    $st = $PDO->prepare('SELECT c.*, mb.nome AS membro_nome FROM comentarios c
+    $st = $PDO->prepare('SELECT c.*, mb.nome AS membro_nome, mb.apelido AS membro_apelido,
+                                mb.cor_avatar, mb.foto
+                         FROM comentarios c
                          JOIN membros mb ON mb.id = c.membro_id
                          WHERE c.alvo_tipo = ? AND c.alvo_id = ? AND c.excluido_em IS NULL
                          ORDER BY c.id');
@@ -216,16 +238,19 @@ if (preg_match('#^/comentarios/(tarefa|documento)/(\d+)$#', $rota, $mm) && $meto
         'id' => (int) $c['id'],
         'membro_id' => (int) $c['membro_id'],
         'membro_nome' => $c['membro_nome'],
+        'membro_apelido' => $c['membro_apelido'],
+        'cor_avatar' => $c['cor_avatar'],
+        'foto' => $c['foto'],
         'texto' => $c['texto'],
         'criado_em' => $c['criado_em'],
     ], $st->fetchAll()));
 }
 
-if (preg_match('#^/comentarios/(tarefa|documento)/(\d+)$#', $rota, $mm) && $metodo === 'POST') {
+if (preg_match('#^/comentarios/(tarefa|documento|projeto)/(\d+)$#', $rota, $mm) && $metodo === 'POST') {
     $m = exigir_login($PDO, $CONFIG);
     $tipo = $mm[1];
     $alvo = (int) $mm[2];
-    $tipo === 'tarefa' ? tarefa_visivel($PDO, $m, $alvo) : documento_visivel($PDO, $m, $alvo);
+    comentario_alvo_visivel($PDO, $m, $tipo, $alvo);
 
     $texto = campo_texto(corpo_json(), 'texto');
     if ($texto === '') {
@@ -355,28 +380,55 @@ if ($rota === '/objetivos' && $metodo === 'POST') {
     responder(['id' => (int) $PDO->lastInsertId()], 201);
 }
 
+// Carrega um objetivo respeitando o escopo por diretoria. Sem isto, qualquer
+// pessoa logada alteraria ou apagaria os OKRs de outra diretoria por chamada
+// direta — o filtro do GET não protege as rotas de escrita.
+function objetivo_visivel(PDO $pdo, array $membro, int $id): array
+{
+    $st = $pdo->prepare('SELECT * FROM objetivos WHERE id = ? AND excluido_em IS NULL');
+    $st->execute([$id]);
+    $o = $st->fetch();
+    if (!$o) {
+        erro('Objetivo não encontrado', 404);
+    }
+    $setores = setores_visiveis($membro);
+    if ($setores !== null && $o['setor'] !== null && !in_array($o['setor'], $setores, true)) {
+        erro('Objetivo não encontrado', 404);
+    }
+    return $o;
+}
+
 if (preg_match('#^/objetivos/(\d+)/resultados$#', $rota, $mm) && $metodo === 'POST') {
-    exigir_login($PDO, $CONFIG);
+    $m = exigir_login($PDO, $CONFIG);
+    $objetivo = objetivo_visivel($PDO, $m, (int) $mm[1]);
     $d = corpo_json();
     $titulo = campo_texto($d, 'titulo');
     if ($titulo === '') {
         erro('Informe o resultado-chave.');
     }
     $PDO->prepare('INSERT INTO resultados_chave (objetivo_id, titulo, alvo, atual, unidade) VALUES (?, ?, ?, ?, ?)')
-        ->execute([(int) $mm[1], $titulo, campo_int($d, 'alvo', 100), campo_int($d, 'atual', 0), campo_ou_nulo($d, 'unidade')]);
+        ->execute([(int) $objetivo['id'], $titulo, campo_int($d, 'alvo', 100), campo_int($d, 'atual', 0), campo_ou_nulo($d, 'unidade')]);
     responder(['id' => (int) $PDO->lastInsertId()], 201);
 }
 
 if (preg_match('#^/resultados/(\d+)$#', $rota, $mm) && $metodo === 'POST') {
-    exigir_login($PDO, $CONFIG);
+    $m = exigir_login($PDO, $CONFIG);
+    $st = $PDO->prepare('SELECT objetivo_id FROM resultados_chave WHERE id = ?');
+    $st->execute([(int) $mm[1]]);
+    $kr = $st->fetch();
+    if (!$kr) {
+        erro('Resultado-chave não encontrado', 404);
+    }
+    objetivo_visivel($PDO, $m, (int) $kr['objetivo_id']);
     $PDO->prepare('UPDATE resultados_chave SET atual = ? WHERE id = ?')
         ->execute([campo_int(corpo_json(), 'atual', 0), (int) $mm[1]]);
     responder(['ok' => true]);
 }
 
 if (preg_match('#^/objetivos/(\d+)$#', $rota, $mm) && $metodo === 'DELETE') {
-    exigir_login($PDO, $CONFIG);
-    $PDO->prepare('UPDATE objetivos SET excluido_em = ? WHERE id = ?')->execute([agora(), (int) $mm[1]]);
+    $m = exigir_login($PDO, $CONFIG);
+    $objetivo = objetivo_visivel($PDO, $m, (int) $mm[1]);
+    $PDO->prepare('UPDATE objetivos SET excluido_em = ? WHERE id = ?')->execute([agora(), (int) $objetivo['id']]);
     http_response_code(204);
     exit;
 }

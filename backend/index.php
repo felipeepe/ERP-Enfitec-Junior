@@ -46,14 +46,44 @@ if ($rota === '/health' || $rota === '/') {
 
 // ---- AUTH (e-mail + senha) ----
 if ($rota === '/auth/login-senha' && $metodo === 'POST') {
+    require_once __DIR__ . '/lib/erp_comum.php';
     $d = corpo_json();
-    $email = strtolower(trim($d['email'] ?? ''));
-    $senha = (string) ($d['senha'] ?? '');
+    // Cast explícito: sob strict_types, {"email": []} viraria TypeError e HTTP 500.
+    $email = strtolower(campo_texto($d, 'email'));
+    $senha = is_scalar($d['senha'] ?? null) ? (string) $d['senha'] : '';
+
+    // ---- Freio contra tentativa em massa ----
+    // Sem isto, um script testa milhares de senhas por minuto. Conta as falhas
+    // recentes do MESMO e-mail e recusa antes de sequer verificar o hash.
+    $JANELA_MIN = 15;
+    $LIMITE = 5;
+    $desde = date('Y-m-d H:i:s', time() - $JANELA_MIN * 60);
+
+    // Aproveita para limpar o que já não importa, evitando crescer sem fim.
+    $PDO->prepare('DELETE FROM tentativas_login WHERE criado_em < ?')
+        ->execute([date('Y-m-d H:i:s', time() - 24 * 3600)]);
+
+    $ct = $PDO->prepare('SELECT COUNT(*) AS n FROM tentativas_login WHERE email = ? AND criado_em >= ?');
+    $ct->execute([$email, $desde]);
+    $falhas = (int) $ct->fetch()['n'];
+
+    if ($falhas >= $LIMITE) {
+        // 429 e não 401: a diferença importa para quem está legitimamente travado.
+        erro("Muitas tentativas. Aguarde $JANELA_MIN minutos e tente de novo.", 429);
+    }
+
     $membro = membro_por_email($PDO, $email);
     if (!$membro || !(int) $membro['ativo'] || empty($membro['senha_hash'])
         || !password_verify($senha, $membro['senha_hash'])) {
+        $PDO->prepare('INSERT INTO tentativas_login (email, origem, criado_em) VALUES (?, ?, ?)')
+            ->execute([$email, substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 60), agora()]);
+        // Mensagem única para e-mail inexistente, senha errada e conta inativa:
+        // diferenciar permitiria descobrir quem tem cadastro.
         erro('E-mail ou senha inválidos.', 401);
     }
+
+    // Entrou: zera o histórico de falhas dessa conta.
+    $PDO->prepare('DELETE FROM tentativas_login WHERE email = ?')->execute([$email]);
     $sessao = jwt_criar(['sub' => (string) $membro['id'], 'tipo' => 'sessao'], $CONFIG['jwt_secret'], $CONFIG['sessao_expira_min']);
     responder([
         'access_token' => $sessao,
@@ -93,8 +123,14 @@ if ($rota === '/auth/me' && $metodo === 'GET') {
 // ---- REGISTROS (do próprio usuário) ----
 if ($rota === '/registros' && $metodo === 'GET') {
     $m = exigir_login($PDO, $CONFIG);
-    $st = $PDO->prepare('SELECT id, data, setor, atividade, minutos, descricao, tarefa_id, criado_em
-                         FROM registros WHERE membro_id = ? ORDER BY data DESC, id DESC');
+    $st = $PDO->prepare('SELECT r.id, r.data, r.setor, r.atividade, r.minutos, r.descricao,
+                                r.tipo_hora, r.projeto_id, r.tarefa_id, r.criado_em,
+                                p.nome AS projeto_nome, p.codigo AS projeto_codigo,
+                                t.titulo AS tarefa_titulo, t.numero AS tarefa_numero
+                         FROM registros r
+                         LEFT JOIN projetos p ON p.id = r.projeto_id
+                         LEFT JOIN tarefas t ON t.id = r.tarefa_id
+                         WHERE r.membro_id = ? ORDER BY r.data DESC, r.id DESC');
     $st->execute([$m['id']]);
     responder($st->fetchAll());
 }
@@ -118,15 +154,51 @@ if ($rota === '/registros' && $metodo === 'POST') {
         erro('Informe o tempo trabalhado.');
     }
 
-    // Opcional: amarra a hora lançada a uma tarefa, ligando os dois módulos.
+    // Natureza da hora. Nem todo trabalho de uma EJ é técnico em projeto:
+    // reunião administrativa, evento e estudo também contam como hora dedicada.
+    $tipoHora = $d['tipo_hora'] ?? 'tecnica';
+    if (!in_array($tipoHora, ['tecnica', 'administrativa', 'evento', 'estudo'], true)) {
+        erro('Tipo de hora inválido.');
+    }
+
+    $projetoId = isset($d['projeto_id']) && is_numeric($d['projeto_id']) ? (int) $d['projeto_id'] : null;
     $tarefaId = isset($d['tarefa_id']) && is_numeric($d['tarefa_id']) ? (int) $d['tarefa_id'] : null;
 
-    $st = $PDO->prepare('INSERT INTO registros (membro_id, data, setor, atividade, minutos, descricao, tarefa_id)
-                         VALUES (?, ?, ?, ?, ?, ?, ?)');
-    $st->execute([$m['id'], $data, $setor, $atividade, $minutos, $descricao, $tarefaId]);
+    if ($tipoHora === 'tecnica') {
+        if ($projetoId === null) {
+            erro('Hora técnica precisa estar ligada a um projeto.');
+        }
+        // Confere que a pessoa realmente enxerga esse projeto — senão daria para
+        // lançar hora em projeto de outra diretoria e distorcer o relatório dela.
+        require_once __DIR__ . '/lib/erp_comum.php';
+        $projeto = projeto_visivel($PDO, $m, $projetoId);
+        if ($tarefaId !== null) {
+            $vt = $PDO->prepare('SELECT projeto_id FROM tarefas WHERE id = ? AND excluido_em IS NULL');
+            $vt->execute([$tarefaId]);
+            $t = $vt->fetch();
+            if (!$t || (int) $t['projeto_id'] !== (int) $projeto['id']) {
+                erro('A tarefa escolhida não pertence a esse projeto.');
+            }
+        }
+    } else {
+        // Só hora técnica se liga a projeto; o resto fica solto de propósito.
+        $projetoId = null;
+        $tarefaId = null;
+    }
+
+    $st = $PDO->prepare('INSERT INTO registros (membro_id, data, setor, atividade, minutos, descricao, tipo_hora, projeto_id, tarefa_id)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $st->execute([$m['id'], $data, $setor, $atividade, $minutos, $descricao, $tipoHora, $projetoId, $tarefaId]);
     $id = (int) $PDO->lastInsertId();
 
-    $st = $PDO->prepare('SELECT id, data, setor, atividade, minutos, descricao, tarefa_id, criado_em FROM registros WHERE id = ?');
+    $st = $PDO->prepare('SELECT r.id, r.data, r.setor, r.atividade, r.minutos, r.descricao,
+                                r.tipo_hora, r.projeto_id, r.tarefa_id, r.criado_em,
+                                p.nome AS projeto_nome, p.codigo AS projeto_codigo,
+                                t.titulo AS tarefa_titulo, t.numero AS tarefa_numero
+                         FROM registros r
+                         LEFT JOIN projetos p ON p.id = r.projeto_id
+                         LEFT JOIN tarefas t ON t.id = r.tarefa_id
+                         WHERE r.id = ?');
     $st->execute([$id]);
     responder($st->fetch(), 201);
 }
@@ -266,6 +338,7 @@ if (preg_match('#^/gestao/membros/(\d+)/ativo$#', $rota, $mm) && $metodo === 'PO
 require __DIR__ . '/lib/rotas_projetos.php';
 require __DIR__ . '/lib/rotas_documentos.php';   // define documento_visivel(), usada abaixo
 require __DIR__ . '/lib/rotas_anexos.php';
+require __DIR__ . '/lib/rotas_perfil.php';
 
 // Nenhuma rota casou
 erro('Rota não encontrada: ' . $metodo . ' ' . $rota, 404);

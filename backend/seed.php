@@ -7,6 +7,14 @@
 // Sem argumentos, cria um conjunto de exemplo.
 declare(strict_types=1);
 
+// Só por linha de comando. Publicado junto com a API, um GET em /api/seed.php
+// reescreveria a senha do gestor para a senha de exemplo e reativaria a conta —
+// repetível, mesmo depois de trocada.
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 require_once __DIR__ . '/lib/bootstrap.php'; // $CONFIG, $PDO, helpers
 require __DIR__ . '/migrar.php';             // garante que as tabelas existem
 

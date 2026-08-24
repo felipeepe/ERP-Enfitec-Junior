@@ -1,0 +1,16 @@
+# Normaliza a quebra de linha no repositório.
+#
+# Sem isto, depende do core.autocrlf de cada máquina: o próximo aluno que clonar
+# no Windows com outra configuração commita CRLF e gera diff de arquivo inteiro,
+# escondendo a mudança real. Num time que troca a cada semestre, isso acontece.
+* text=auto eol=lf
+
+# Binários não devem ser tocados.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.db binary
