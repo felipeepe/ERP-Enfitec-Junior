@@ -374,3 +374,25 @@ export function enviarMensagem(membroId, texto) {
 export function removerMensagem(id) {
   return req(`/mensagens/item/${id}`, { method: 'DELETE' })
 }
+
+// ============================ CRONÔMETRO ============================
+
+// Avisa a barra flutuante de que o cronômetro começou ou parou noutra tela.
+export const EVENTO_CRONOMETRO = 'rh:cronometro-mudou'
+
+export function cronometroAtual() {
+  return req('/cronometro')
+}
+
+export function iniciarCronometro(tarefaId) {
+  return req(`/cronometro/${tarefaId}`, { method: 'POST' })
+}
+
+// Parar lança a hora; devolve quantos minutos foram registrados.
+export function pararCronometro(dados = {}) {
+  return req('/cronometro/parar', { method: 'POST', body: dados })
+}
+
+export function descartarCronometro() {
+  return req('/cronometro', { method: 'DELETE' })
+}

@@ -4,6 +4,7 @@ import logoEnfitecFull from '../assets/logo-enfitec-full.jpg'
 import { getMembro, logout, contarNaoLidas, EVENTO_MEMBRO } from '../lib/api'
 import BuscaGlobal from './BuscaGlobal.jsx'
 import Avatar from './Avatar.jsx'
+import BarraCronometro from './BarraCronometro.jsx'
 
 // Seções do ERP. O menu é o mesmo para todos os papéis — o que muda é o conteúdo
 // de cada aba (ver PainelDeHoras em App.jsx, que separa gestor de membro).
@@ -89,6 +90,8 @@ export default function AppShell({ children }) {
       </header>
 
       <main className={`content ${largo ? 'content--largo' : ''}`}>{children}</main>
+
+      <BarraCronometro />
     </div>
   )
 }

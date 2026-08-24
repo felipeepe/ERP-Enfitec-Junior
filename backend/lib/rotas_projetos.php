@@ -586,6 +586,100 @@ if (preg_match('#^/checklist/(\d+)$#', $rota, $mm) && $metodo === 'DELETE') {
     exit;
 }
 
+// ============================ CRONÔMETRO ============================
+// Play/stop na tarefa. Parar gera um lançamento de hora técnica já amarrado ao
+// projeto e à tarefa — é o que tira o atrito de lembrar, no fim do dia, quanto
+// tempo levou cada coisa.
+
+// O que está rodando agora (ou null).
+if ($rota === '/cronometro' && $metodo === 'GET') {
+    $m = exigir_login($PDO, $CONFIG);
+    $st = $PDO->prepare(
+        'SELECT c.*, t.titulo, t.numero, t.projeto_id, p.codigo, p.nome AS projeto_nome
+         FROM cronometros c
+         JOIN tarefas t ON t.id = c.tarefa_id
+         JOIN projetos p ON p.id = t.projeto_id
+         WHERE c.membro_id = ? LIMIT 1'
+    );
+    $st->execute([(int) $m['id']]);
+    $c = $st->fetch();
+    if (!$c) {
+        responder(null);
+    }
+    responder([
+        'id' => (int) $c['id'],
+        'tarefa_id' => (int) $c['tarefa_id'],
+        'projeto_id' => (int) $c['projeto_id'],
+        'titulo' => $c['titulo'],
+        'codigo' => $c['codigo'] . '-' . $c['numero'],
+        'projeto_nome' => $c['projeto_nome'],
+        'iniciado_em' => $c['iniciado_em'],
+        // Manda os segundos já corridos: o relógio do navegador pode estar torto,
+        // e o que vale para a hora lançada é o do servidor.
+        'segundos' => max(0, time() - strtotime($c['iniciado_em'])),
+    ]);
+}
+
+if (preg_match('#^/cronometro/(\d+)$#', $rota, $mm) && $metodo === 'POST') {
+    $m = exigir_login($PDO, $CONFIG);
+    $t = tarefa_visivel($PDO, $m, (int) $mm[1]);
+    // Um por pessoa: começar em outra tarefa descarta o anterior sem lançar.
+    $PDO->prepare('DELETE FROM cronometros WHERE membro_id = ?')->execute([(int) $m['id']]);
+    $PDO->prepare('INSERT INTO cronometros (membro_id, tarefa_id, iniciado_em) VALUES (?, ?, ?)')
+        ->execute([(int) $m['id'], (int) $t['id'], agora()]);
+    responder(['ok' => true, 'iniciado_em' => agora()], 201);
+}
+
+// Parar e lançar a hora.
+if ($rota === '/cronometro/parar' && $metodo === 'POST') {
+    $m = exigir_login($PDO, $CONFIG);
+    $st = $PDO->prepare('SELECT * FROM cronometros WHERE membro_id = ? LIMIT 1');
+    $st->execute([(int) $m['id']]);
+    $c = $st->fetch();
+    if (!$c) {
+        erro('Nenhum cronômetro em andamento.', 404);
+    }
+
+    $tarefa = tarefa_visivel($PDO, $m, (int) $c['tarefa_id']);
+    $projeto = projeto_visivel($PDO, $m, (int) $tarefa['projeto_id']);
+    $segundos = max(0, time() - strtotime($c['iniciado_em']));
+    $minutos = (int) round($segundos / 60);
+
+    $PDO->prepare('DELETE FROM cronometros WHERE id = ?')->execute([(int) $c['id']]);
+
+    // Menos de um minuto não vira lançamento — seria ruído no relatório.
+    if ($minutos < 1) {
+        responder(['ok' => true, 'registrado' => false, 'minutos' => 0]);
+    }
+
+    $d = corpo_json();
+    $PDO->prepare('INSERT INTO registros (membro_id, data, setor, atividade, minutos, descricao, tipo_hora, projeto_id, tarefa_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        ->execute([
+            (int) $m['id'],
+            // A data é a do INÍCIO: quem começa 23h40 e para 00h10 lançou na véspera.
+            substr((string) $c['iniciado_em'], 0, 10),
+            $projeto['setor'],
+            campo_texto($d, 'atividade', 'Desenvolvimento de projeto') ?: 'Desenvolvimento de projeto',
+            $minutos,
+            campo_ou_nulo($d, 'descricao'),
+            'tecnica',
+            (int) $projeto['id'],
+            (int) $tarefa['id'],
+        ]);
+
+    registrar_historico($PDO, (int) $tarefa['id'], (int) $m['id'], 'lancou_hora', 'minutos', null, (string) $minutos);
+    responder(['ok' => true, 'registrado' => true, 'minutos' => $minutos], 201);
+}
+
+// Descartar sem lançar.
+if ($rota === '/cronometro' && $metodo === 'DELETE') {
+    $m = exigir_login($PDO, $CONFIG);
+    $PDO->prepare('DELETE FROM cronometros WHERE membro_id = ?')->execute([(int) $m['id']]);
+    http_response_code(204);
+    exit;
+}
+
 // ---- Histórico de alterações ----
 if (preg_match('#^/tarefas/(\d+)/historico$#', $rota, $mm) && $metodo === 'GET') {
     $m = exigir_login($PDO, $CONFIG);

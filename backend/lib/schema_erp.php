@@ -212,6 +212,17 @@ function schema_erp(bool $sqlite): array
         excluido_em $dt
     )$fim";
 
+    // ---------- Cronômetro de tarefa ----------
+    // Fica no servidor, não no navegador: se o cronômetro morasse no
+    // localStorage, fechar a aba ou trocar de aparelho perderia trabalho real
+    // já feito. Uma pessoa só pode ter um rodando por vez.
+    $t[] = "CREATE TABLE IF NOT EXISTS cronometros (
+        id $pk,
+        membro_id $int NOT NULL,
+        tarefa_id $int NOT NULL,
+        iniciado_em $dt NOT NULL
+    )$fim";
+
     // ---------- Controle de tentativas de acesso ----------
     // Guarda só as falhas, para atrasar quem está tentando adivinhar senha.
     $t[] = "CREATE TABLE IF NOT EXISTS tentativas_login (
@@ -246,6 +257,7 @@ function indices_erp(bool $sqlite): array
         "CREATE INDEX {$se}idx_msg_par ON mensagens(remetente_id, destinatario_id)",
         "CREATE INDEX {$se}idx_msg_destino ON mensagens(destinatario_id, lida_em)",
         "CREATE INDEX {$se}idx_tentativa ON tentativas_login(email, criado_em)",
+        "CREATE INDEX {$se}idx_cronometro_membro ON cronometros(membro_id)",
         "CREATE INDEX {$se}idx_registro_tipo ON registros(membro_id, tipo_hora)",
         "CREATE INDEX {$se}idx_tarefa_projeto ON tarefas(projeto_id, status_id)",
         "CREATE INDEX {$se}idx_tarefa_pai ON tarefas(tarefa_pai_id)",

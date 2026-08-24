@@ -10,6 +10,9 @@ import { rotuloData, hoje, formatarMinutos } from '../lib/datas'
 import TarefaPainel from '../components/TarefaPainel.jsx'
 import PainelProjeto from '../components/PainelProjeto.jsx'
 import Discussao from '../components/Discussao.jsx'
+import VistaLista from '../components/VistaLista.jsx'
+import VistaCalendario from '../components/VistaCalendario.jsx'
+import Avatar from '../components/Avatar.jsx'
 
 const PRIORIDADES = [
   ['urgente', 'Urgente'],
@@ -94,6 +97,24 @@ export default function Projeto() {
       recarregar()
     } catch {
       setTarefas((lista) => lista.map((t) => (t.id === tarefaId ? { ...t, status_id: atual.status_id } : t)))
+      notificar('Não foi possível mover a tarefa')
+    }
+  }
+
+  // Arrastar-e-soltar HTML5 não existe em toque: no celular, a ação central do
+  // produto ficaria inacessível. Estes botões movem o cartão para a coluna
+  // vizinha e só aparecem em tela estreita.
+  async function moverColuna(tarefa, direcao) {
+    const i = projeto.status.findIndex((s) => s.id === tarefa.status_id)
+    const destino = projeto.status[i + direcao]
+    if (!destino) return
+
+    setTarefas((lista) => lista.map((t) => (t.id === tarefa.id ? { ...t, status_id: destino.id } : t)))
+    try {
+      await atualizarTarefa(tarefa.id, { status_id: destino.id })
+      recarregar()
+    } catch {
+      setTarefas((lista) => lista.map((t) => (t.id === tarefa.id ? { ...t, status_id: tarefa.status_id } : t)))
       notificar('Não foi possível mover a tarefa')
     }
   }
@@ -191,9 +212,12 @@ export default function Projeto() {
         </div>
         <div className="acoes-projeto">
           <div className="alternador" role="group" aria-label="Modo de visualização">
-            <button className={vista === 'quadro' ? 'ativo' : ''} onClick={() => setVista('quadro')}>Quadro</button>
-            <button className={vista === 'painel' ? 'ativo' : ''} onClick={() => setVista('painel')}>Painel</button>
-            <button className={vista === 'discussao' ? 'ativo' : ''} onClick={() => setVista('discussao')}>Discussão</button>
+            {[
+              ['quadro', 'Quadro'], ['lista', 'Lista'], ['calendario', 'Calendário'],
+              ['painel', 'Painel'], ['discussao', 'Discussão'],
+            ].map(([v, r]) => (
+              <button key={v} className={vista === v ? 'ativo' : ''} onClick={() => setVista(v)}>{r}</button>
+            ))}
           </div>
           <select className="input input--compacto" value={projeto.situacao}
             onChange={(e) => mudarSituacao(e.target.value)} aria-label="Situação do projeto">
@@ -268,6 +292,33 @@ export default function Projeto() {
           <h3 className="bloco-titulo">Zona de risco</h3>
           <button className="btn btn-perigo" onClick={apagarProjeto}>Arquivar projeto</button>
         </section>
+      )}
+
+      {vista === 'lista' && (
+        <VistaLista
+          projeto={projeto}
+          tarefas={doQuadro}
+          aoAbrir={(id) => setParams({ tarefa: String(id) })}
+        />
+      )}
+
+      {vista === 'calendario' && (
+        <VistaCalendario
+          projeto={projeto}
+          tarefas={doQuadro}
+          aoAbrir={(id) => setParams({ tarefa: String(id) })}
+          aoRemarcar={async (id, prazo) => {
+            // Otimista: a tarefa pula de dia na hora e volta se a API recusar.
+            const antes = tarefas.find((t) => t.id === id)?.prazo ?? null
+            setTarefas((lista) => lista.map((t) => (t.id === id ? { ...t, prazo } : t)))
+            try {
+              await atualizarTarefa(id, { prazo })
+            } catch {
+              setTarefas((lista) => lista.map((t) => (t.id === id ? { ...t, prazo: antes } : t)))
+              notificar('Não foi possível remarcar')
+            }
+          }}
+        />
       )}
 
       {vista === 'painel' && <PainelProjeto projeto={projeto} tarefas={tarefas} />}
@@ -378,12 +429,27 @@ export default function Projeto() {
                       {t.responsaveis.length > 0 && (
                         <span className="avatares">
                           {t.responsaveis.slice(0, 3).map((r) => (
-                            <span key={r.id} className="avatar avatar--mini" title={r.nome}>
-                              {r.nome.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()}
-                            </span>
+                            <Avatar key={r.id} pessoa={r} tamanho={24} />
                           ))}
                         </span>
                       )}
+                    </div>
+
+                    {/* Alternativa ao arrastar, para telas de toque */}
+                    <div className="cartao-mover">
+                      <button
+                        disabled={projeto.status.findIndex((s) => s.id === t.status_id) === 0}
+                        onClick={(e) => { e.stopPropagation(); moverColuna(t, -1) }}
+                        aria-label="Mover para a coluna anterior"
+                      >←</button>
+                      <span className="cartao-mover-status">
+                        {projeto.status.find((s) => s.id === t.status_id)?.nome}
+                      </span>
+                      <button
+                        disabled={projeto.status.findIndex((s) => s.id === t.status_id) === projeto.status.length - 1}
+                        onClick={(e) => { e.stopPropagation(); moverColuna(t, 1) }}
+                        aria-label="Mover para a próxima coluna"
+                      >→</button>
                     </div>
                   </article>
                 ))}

@@ -4,6 +4,7 @@ import {
   criarItemChecklist, marcarItemChecklist, removerItemChecklist,
   listarComentarios, comentar, removerComentario, historicoTarefa,
   listarAnexos, enviarAnexo, removerAnexo, urlApi,
+  cronometroAtual, iniciarCronometro, EVENTO_CRONOMETRO,
 } from '../lib/api'
 
 // Tamanho de arquivo em unidade legível.
@@ -33,6 +34,30 @@ export default function TarefaPainel({ tarefaId, projeto, tarefasDoProjeto = [],
   const [salvando, setSalvando] = useState(false)
   const [anexos, setAnexos] = useState([])
   const [enviando, setEnviando] = useState(false)
+  const [cronRodando, setCronRodando] = useState(false)
+
+  // Saber se o cronômetro já está nesta tarefa muda o botão de play para um
+  // aviso — começar de novo descartaria o tempo em andamento.
+  useEffect(() => {
+    const conferir = () => cronometroAtual()
+      .then((c) => setCronRodando(!!c && c.tarefa_id === tarefaId))
+      .catch(() => setCronRodando(false))
+    conferir()
+    window.addEventListener(EVENTO_CRONOMETRO, conferir)
+    return () => window.removeEventListener(EVENTO_CRONOMETRO, conferir)
+  }, [tarefaId])
+
+  async function comecarCronometro() {
+    const emOutra = await cronometroAtual().catch(() => null)
+    if (emOutra && emOutra.tarefa_id !== tarefaId) {
+      const ok = window.confirm(
+        `Já há tempo correndo em ${emOutra.codigo}. Começar aqui descarta aquele tempo sem lançar. Continuar?`,
+      )
+      if (!ok) return
+    }
+    await iniciarCronometro(tarefaId)
+    window.dispatchEvent(new CustomEvent(EVENTO_CRONOMETRO))
+  }
 
   // Depende só do id: `aoFechar` vem do pai e é recriado a cada render dele, então
   // incluí-lo aqui faria este efeito rodar em loop.
@@ -149,6 +174,15 @@ export default function TarefaPainel({ tarefaId, projeto, tarefasDoProjeto = [],
           <span className="tarefa-codigo">{projeto.codigo}-{tarefa.numero}</span>
           <div className="drawer-acoes">
             {salvando && <span className="salvando">salvando…</span>}
+            {cronRodando ? (
+              <span className="cron-nesta" title="Use a barra no rodapé para parar">
+                <span className="cron-pulso" aria-hidden="true" /> contando
+              </span>
+            ) : (
+              <button className="btn btn-ghost btn-cron" onClick={comecarCronometro}>
+                ▶ Iniciar
+              </button>
+            )}
             <button className="icon-btn" onClick={apagar} title="Remover tarefa">🗑</button>
             <button className="icon-btn" onClick={aoFechar} title="Fechar">✕</button>
           </div>
