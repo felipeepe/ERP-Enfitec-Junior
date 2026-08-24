@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS membros (
     email      VARCHAR(255) NOT NULL UNIQUE,
     nome       VARCHAR(255) NOT NULL,
     role       VARCHAR(20)  NOT NULL DEFAULT 'membro',   -- 'membro' ou 'gestor'
+    setor      VARCHAR(60)  NULL,                        -- diretoria de atuação (uma por membro)
     ativo      TINYINT(1)   NOT NULL DEFAULT 1,
     senha_hash VARCHAR(255) NULL,                        -- hash da senha (todos os usuários)
     senha_provisoria TINYINT(1) NOT NULL DEFAULT 0,      -- 1 = precisa trocar no 1º acesso

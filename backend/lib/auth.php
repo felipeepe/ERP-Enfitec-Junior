@@ -1,5 +1,5 @@
 <?php
-// Autenticação por link mágico e identificação do usuário logado.
+// Identificação do usuário logado a partir do token de sessão (JWT).
 
 declare(strict_types=1);
 
@@ -21,24 +21,6 @@ function membro_por_id(PDO $pdo, int $id): ?array
     $st->execute([$id]);
     $m = $st->fetch();
     return $m ?: null;
-}
-
-// Monta e "envia" o link mágico (mail() em produção; arquivo em dev).
-function enviar_link_magico(array $config, string $email, string $token): void
-{
-    $link = rtrim($config['frontend_url'], '/') . '/entrar?token=' . $token;
-
-    if (!empty($config['email_ativo'])) {
-        $assunto = 'Seu acesso ao Registrador de Horas ENFITEC';
-        $corpo = "Ola!\n\nUse o link abaixo para acessar (valido por "
-            . $config['magic_expira_min'] . " minutos):\n\n$link\n\n"
-            . "Se voce nao solicitou, ignore este e-mail.";
-        $headers = 'From: ' . $config['email_remetente'];
-        @mail($email, $assunto, $corpo, $headers);
-    } else {
-        // Dev: grava o link num arquivo para você copiar.
-        file_put_contents(__DIR__ . '/ultimo-link.txt', "$email\n$link\n");
-    }
 }
 
 // Extrai o token "Authorization: Bearer ..." e devolve o membro logado (ou null).
