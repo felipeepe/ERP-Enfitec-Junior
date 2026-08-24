@@ -1,0 +1,6 @@
+.env
+.claude/
+node_modules/
+backend/config.php
+backend/*.db
+backend/lib/ultimo-link.txt
