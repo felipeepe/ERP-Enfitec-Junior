@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import logoEnfitecFull from '../assets/logo-enfitec-full.jpg'
-import { getMembro, trocarSenha, logout } from '../lib/api'
+import { trocarSenha, logout } from '../lib/api'
 
 export default function TrocarSenha() {
   const navigate = useNavigate()
-  const membro = getMembro()
   const [nova, setNova] = useState('')
   const [confirma, setConfirma] = useState('')
   const [carregando, setCarregando] = useState(false)
@@ -25,7 +24,7 @@ export default function TrocarSenha() {
     setCarregando(true)
     try {
       await trocarSenha(nova)
-      navigate(membro?.role === 'gestor' ? '/gestao' : '/registro', { replace: true })
+      navigate('/horas', { replace: true })
     } catch (err) {
       setErro(err?.message || 'Não foi possível trocar a senha.')
     } finally {

@@ -16,11 +16,8 @@ export default function Login() {
     setCarregando(true)
     try {
       const membro = await loginSenha(email.trim(), senha)
-      if (membro?.senha_provisoria) {
-        navigate('/trocar-senha', { replace: true })
-      } else {
-        navigate(membro?.role === 'gestor' ? '/gestao' : '/registro', { replace: true })
-      }
+      // O papel decide o conteúdo do Painel de Horas, não mais a rota.
+      navigate(membro?.senha_provisoria ? '/trocar-senha' : '/horas', { replace: true })
     } catch (err) {
       setErro(err?.message || 'Não foi possível entrar. Verifique a conexão com o servidor.')
     } finally {

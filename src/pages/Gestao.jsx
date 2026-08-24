@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import logoEnfitecFull from '../assets/logo-enfitec-full.jpg'
 import {
-  getMembro, logout, resumoGestao, analiseGestao,
+  resumoGestao, analiseGestao,
   listarMembros, salvarMembro, definirAtivoMembro,
 } from '../lib/api'
+import { SETORES } from '../lib/setores'
+import { mesAtual, deslocarMes, rotuloMes, formatarMinutos } from '../lib/datas'
 
 // Desenha um gráfico de barras horizontais dentro do PDF (jsPDF). Retorna o novo Y.
 function desenharBarrasPDF(doc, titulo, dados, y) {
@@ -54,44 +54,14 @@ function GraficoBarras({ dados, vazio }) {
   )
 }
 
-// ---- helpers de tempo/mês ----
-function formatarMinutos(total) {
-  const h = Math.floor(total / 60)
-  const m = total % 60
-  return `${h}:${String(m).padStart(2, '0')}`
-}
-const SETORES = [
-  'Presidência',
-  'Administrativo-Financeiro',
-  'Comercial',
-  'Projetos',
-  'Gestão de Pessoas',
-  'Marketing',
-]
-const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-const mesAtual = () => new Date().toISOString().slice(0, 7)
-function rotuloMes(ym) {
-  const [ano, mes] = ym.split('-').map(Number)
-  return `${MESES[mes - 1]}/${ano}`
-}
-function deslocarMes(ym, delta) {
-  const [ano, mes] = ym.split('-').map(Number)
-  const d = new Date(ano, mes - 1 + delta, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
 export default function Gestao() {
-  const navigate = useNavigate()
-  const conta = getMembro()
-
   const [mesView, setMesView] = useState(mesAtual())
   const podeAvancar = mesView < mesAtual()
   const [setorView, setSetorView] = useState('') // '' = todos os setores
   const [resumo, setResumo] = useState([])
   const [analise, setAnalise] = useState({ por_setor: [], por_atividade: [] })
   const [membros, setMembros] = useState([])
-  const [novo, setNovo] = useState({ email: '', nome: '', senha: '', role: 'membro' })
+  const [novo, setNovo] = useState({ email: '', nome: '', senha: '', setor: SETORES[0], role: 'membro' })
 
   const [toast, setToast] = useState('')
   const toastTimer = useRef()
@@ -132,7 +102,7 @@ export default function Gestao() {
     e.preventDefault()
     try {
       await salvarMembro(novo)
-      setNovo({ email: '', nome: '', senha: '', role: 'membro' })
+      setNovo({ email: '', nome: '', senha: '', setor: SETORES[0], role: 'membro' })
       carregarMembros()
       notificar('Membro salvo ✓')
     } catch (err) {
@@ -186,193 +156,177 @@ export default function Gestao() {
     doc.save(`relatorio-horas-${mesView}${slug}.pdf`)
   }
 
-  function sair() {
-    logout()
-    navigate('/')
-  }
-
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="topbar-brand">
-          <img src={logoEnfitecFull} alt="ENFITEC Jr." className="topbar-logo-full" />
-        </div>
-        <div className="topbar-user">
-          <div className="avatar" aria-hidden="true">GP</div>
-          <div className="topbar-userinfo">
-            <span className="topbar-name">Gestão de Pessoas</span>
-            <span className="topbar-email">{conta?.email}</span>
+    <>
+      <h1 className="saudacao">Painel de Horas</h1>
+
+      {/* Filtro por setor — controla tabela, gráficos e PDF */}
+      <div className="filtro-setor" role="group" aria-label="Filtrar por setor">
+        <button className={`filtro-pill ${setorView === '' ? 'ativo' : ''}`}
+          onClick={() => setSetorView('')}>Todos</button>
+        {SETORES.map((s) => (
+          <button key={s} className={`filtro-pill ${setorView === s ? 'ativo' : ''}`}
+            onClick={() => setSetorView(s)}>{s}</button>
+        ))}
+      </div>
+
+      {/* Relatório de horas */}
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2 className="panel-title">Horas da equipe</h2>
+            <p className="panel-sub">Relatório mensal · somente leitura</p>
           </div>
-          <button className="btn btn-ghost" onClick={sair}>Sair</button>
-        </div>
-      </header>
-
-      <main className="content">
-        <h1 className="saudacao">Painel de Gestão</h1>
-
-        {/* Filtro por setor — controla tabela, gráficos e PDF */}
-        <div className="filtro-setor" role="group" aria-label="Filtrar por setor">
-          <button className={`filtro-pill ${setorView === '' ? 'ativo' : ''}`}
-            onClick={() => setSetorView('')}>Todos</button>
-          {SETORES.map((s) => (
-            <button key={s} className={`filtro-pill ${setorView === s ? 'ativo' : ''}`}
-              onClick={() => setSetorView(s)}>{s}</button>
-          ))}
-        </div>
-
-        {/* Relatório de horas */}
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <h2 className="panel-title">Horas da equipe</h2>
-              <p className="panel-sub">Relatório mensal · somente leitura</p>
-            </div>
-            <div className="mes-nav mes-nav--claro">
-              <button className="mes-btn mes-btn--claro" onClick={() => setMesView((m) => deslocarMes(m, -1))}
-                aria-label="Mês anterior">‹</button>
-              <span className="mes-rotulo">{rotuloMes(mesView)}</span>
-              <button className="mes-btn mes-btn--claro" onClick={() => setMesView((m) => deslocarMes(m, 1))}
-                disabled={!podeAvancar} aria-label="Próximo mês">›</button>
-            </div>
-          </div>
-
-          <div className="relatorio-head">
-            <div className="total">
-              <span className="total-label">Total geral</span>
-              <span className="total-value">{formatarMinutos(totalGeral)}</span>
-            </div>
-            <button className="btn btn-primary" onClick={baixarPDF} disabled={porMembro.length === 0}>
-              ⬇ Baixar relatório (PDF)
-            </button>
-          </div>
-
-          {porMembro.length === 0 ? (
-            <div className="empty">
-              <div className="empty-icon" aria-hidden="true">📊</div>
-              <p>Nenhuma hora registrada em {rotuloMes(mesView)}.</p>
-            </div>
-          ) : (
-            <div className="tabela-wrap">
-              <table className="tabela">
-                <thead>
-                  <tr><th>Membro</th><th>Setores</th><th className="num">Lanç.</th><th className="num">Horas</th></tr>
-                </thead>
-                <tbody>
-                  {porMembro.map((m) => (
-                    <tr key={m.nome}>
-                      <td className="forte-nome">{m.nome}</td>
-                      <td className="setores">{m.setores.join(', ')}</td>
-                      <td className="num">{m.qtd}</td>
-                      <td className="num forte">{formatarMinutos(m.total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        {/* Análise em gráficos */}
-        <div className="stats">
-          <div className="stat-card stat-card--brand">
-            <span className="stat-label">Setor com mais horas</span>
-            <span className="stat-value">{topSetor ? formatarMinutos(topSetor.total_minutos) : '0:00'}</span>
-            <span className="stat-hint">{topSetor ? topSetor.rotulo : '—'}</span>
-          </div>
-          <div className="stat-card stat-card--brand">
-            <span className="stat-label">Atividade mais trabalhada</span>
-            <span className="stat-value">{topAtividade ? formatarMinutos(topAtividade.total_minutos) : '0:00'}</span>
-            <span className="stat-hint">{topAtividade ? topAtividade.rotulo : '—'}</span>
+          <div className="mes-nav mes-nav--claro">
+            <button className="mes-btn mes-btn--claro" onClick={() => setMesView((m) => deslocarMes(m, -1))}
+              aria-label="Mês anterior">‹</button>
+            <span className="mes-rotulo">{rotuloMes(mesView)}</span>
+            <button className="mes-btn mes-btn--claro" onClick={() => setMesView((m) => deslocarMes(m, 1))}
+              disabled={!podeAvancar} aria-label="Próximo mês">›</button>
           </div>
         </div>
 
-        <div className="grid grid--admin">
-          <section className="panel">
-            <div className="panel-head">
-              <div>
-                <h2 className="panel-title">Horas por setor</h2>
-                <p className="panel-sub">{rotuloMes(mesView)}</p>
-              </div>
-            </div>
-            <GraficoBarras dados={analise.por_setor} vazio="Sem dados neste mês." />
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <div>
-                <h2 className="panel-title">Horas por atividade</h2>
-                <p className="panel-sub">{rotuloMes(mesView)}</p>
-              </div>
-            </div>
-            <GraficoBarras dados={analise.por_atividade} vazio="Sem dados neste mês." />
-          </section>
+        <div className="relatorio-head">
+          <div className="total">
+            <span className="total-label">Total geral</span>
+            <span className="total-value">{formatarMinutos(totalGeral)}</span>
+          </div>
+          <button className="btn btn-primary" onClick={baixarPDF} disabled={porMembro.length === 0}>
+            ⬇ Baixar relatório (PDF)
+          </button>
         </div>
 
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <h2 className="panel-title">Horas por membro</h2>
-              <p className="panel-sub">{rotuloMes(mesView)}</p>
-            </div>
+        {porMembro.length === 0 ? (
+          <div className="empty">
+            <div className="empty-icon" aria-hidden="true">📊</div>
+            <p>Nenhuma hora registrada em {rotuloMes(mesView)}.</p>
           </div>
-          <GraficoBarras
-            dados={porMembro.map((m) => ({ rotulo: m.nome, total_minutos: m.total }))}
-            vazio="Sem dados neste mês." />
-        </section>
-
-        {/* Gestão de membros */}
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <h2 className="panel-title">Membros e acessos</h2>
-              <p className="panel-sub">Cadastre novos membros e controle quem pode entrar</p>
-            </div>
-          </div>
-
-          <form onSubmit={adicionarMembro} className="form-membro">
-            <input className="input" type="email" required placeholder="e-mail corporativo"
-              value={novo.email} onChange={(e) => setNovo((n) => ({ ...n, email: e.target.value }))} />
-            <input className="input" type="text" required placeholder="Nome Sobrenome"
-              value={novo.nome} onChange={(e) => setNovo((n) => ({ ...n, nome: e.target.value }))} />
-            <input className="input" type="text" required placeholder="senha inicial"
-              value={novo.senha} onChange={(e) => setNovo((n) => ({ ...n, senha: e.target.value }))} />
-            <select className="input" value={novo.role}
-              onChange={(e) => setNovo((n) => ({ ...n, role: e.target.value }))}>
-              <option value="membro">Membro</option>
-              <option value="gestor">Gestor</option>
-            </select>
-            <button type="submit" className="btn btn-primary">Adicionar</button>
-          </form>
-          <p className="form-nota">
-            A senha inicial é provisória — o membro define a própria senha no primeiro acesso.
-          </p>
-
+        ) : (
           <div className="tabela-wrap">
             <table className="tabela">
               <thead>
-                <tr><th>Nome</th><th>E-mail</th><th>Papel</th><th className="num">Acesso</th></tr>
+                <tr><th>Membro</th><th>Setores</th><th className="num">Lanç.</th><th className="num">Horas</th></tr>
               </thead>
               <tbody>
-                {membros.map((m) => (
-                  <tr key={m.id} className={m.ativo ? '' : 'linha-vazia'}>
+                {porMembro.map((m) => (
+                  <tr key={m.nome}>
                     <td className="forte-nome">{m.nome}</td>
-                    <td className="setores">{m.email}</td>
-                    <td>{m.role === 'gestor' ? 'Gestor' : 'Membro'}</td>
-                    <td className="num">
-                      <button className={m.ativo ? 'btn btn-ghost' : 'btn btn-primary'}
-                        onClick={() => alternarAtivo(m)}>
-                        {m.ativo ? 'Desativar' : 'Ativar'}
-                      </button>
-                    </td>
+                    <td className="setores">{m.setores.join(', ')}</td>
+                    <td className="num">{m.qtd}</td>
+                    <td className="num forte">{formatarMinutos(m.total)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+      </section>
+
+      {/* Análise em gráficos */}
+      <div className="stats">
+        <div className="stat-card stat-card--brand">
+          <span className="stat-label">Setor com mais horas</span>
+          <span className="stat-value">{topSetor ? formatarMinutos(topSetor.total_minutos) : '0:00'}</span>
+          <span className="stat-hint">{topSetor ? topSetor.rotulo : '—'}</span>
+        </div>
+        <div className="stat-card stat-card--brand">
+          <span className="stat-label">Atividade mais trabalhada</span>
+          <span className="stat-value">{topAtividade ? formatarMinutos(topAtividade.total_minutos) : '0:00'}</span>
+          <span className="stat-hint">{topAtividade ? topAtividade.rotulo : '—'}</span>
+        </div>
+      </div>
+
+      <div className="grid grid--admin">
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <h2 className="panel-title">Horas por setor</h2>
+              <p className="panel-sub">{rotuloMes(mesView)}</p>
+            </div>
+          </div>
+          <GraficoBarras dados={analise.por_setor} vazio="Sem dados neste mês." />
         </section>
-      </main>
+
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <h2 className="panel-title">Horas por atividade</h2>
+              <p className="panel-sub">{rotuloMes(mesView)}</p>
+            </div>
+          </div>
+          <GraficoBarras dados={analise.por_atividade} vazio="Sem dados neste mês." />
+        </section>
+      </div>
+
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2 className="panel-title">Horas por membro</h2>
+            <p className="panel-sub">{rotuloMes(mesView)}</p>
+          </div>
+        </div>
+        <GraficoBarras
+          dados={porMembro.map((m) => ({ rotulo: m.nome, total_minutos: m.total }))}
+          vazio="Sem dados neste mês." />
+      </section>
+
+      {/* Gestão de membros */}
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2 className="panel-title">Membros e acessos</h2>
+            <p className="panel-sub">Cadastre novos membros e controle quem pode entrar</p>
+          </div>
+        </div>
+
+        <form onSubmit={adicionarMembro} className="form-membro">
+          <input className="input" type="email" required placeholder="e-mail corporativo"
+            value={novo.email} onChange={(e) => setNovo((n) => ({ ...n, email: e.target.value }))} />
+          <input className="input" type="text" required placeholder="Nome Sobrenome"
+            value={novo.nome} onChange={(e) => setNovo((n) => ({ ...n, nome: e.target.value }))} />
+          <input className="input" type="text" required placeholder="senha inicial"
+            value={novo.senha} onChange={(e) => setNovo((n) => ({ ...n, senha: e.target.value }))} />
+          <select className="input" value={novo.setor} aria-label="Diretoria"
+            onChange={(e) => setNovo((n) => ({ ...n, setor: e.target.value }))}>
+            {SETORES.map((s) => <option key={s}>{s}</option>)}
+          </select>
+          <select className="input" value={novo.role} aria-label="Papel"
+            onChange={(e) => setNovo((n) => ({ ...n, role: e.target.value }))}>
+            <option value="membro">Membro</option>
+            <option value="gestor">Gestor</option>
+          </select>
+          <button type="submit" className="btn btn-primary">Adicionar</button>
+        </form>
+        <p className="form-nota">
+          A senha inicial é provisória — o membro define a própria senha no primeiro acesso.
+        </p>
+
+        <div className="tabela-wrap">
+          <table className="tabela">
+            <thead>
+              <tr><th>Nome</th><th>E-mail</th><th>Diretoria</th><th>Papel</th><th className="num">Acesso</th></tr>
+            </thead>
+            <tbody>
+              {membros.map((m) => (
+                <tr key={m.id} className={m.ativo ? '' : 'linha-vazia'}>
+                  <td className="forte-nome">{m.nome}</td>
+                  <td className="setores">{m.email}</td>
+                  <td className="setores">{m.setor || '—'}</td>
+                  <td>{m.role === 'gestor' ? 'Gestor' : 'Membro'}</td>
+                  <td className="num">
+                    <button className={m.ativo ? 'btn btn-ghost' : 'btn btn-primary'}
+                      onClick={() => alternarAtivo(m)}>
+                      {m.ativo ? 'Desativar' : 'Ativar'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {toast && <div className="toast" role="status">{toast}</div>}
-    </div>
+    </>
   )
 }

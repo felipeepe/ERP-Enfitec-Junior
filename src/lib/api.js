@@ -102,10 +102,211 @@ export function listarMembros() {
   return req('/gestao/membros')
 }
 
-export function salvarMembro({ email, nome, role, senha }) {
-  return req('/gestao/membros', { method: 'POST', body: { email, nome, role, senha } })
+export function salvarMembro({ email, nome, role, setor, senha }) {
+  return req('/gestao/membros', { method: 'POST', body: { email, nome, role, setor, senha } })
 }
 
 export function definirAtivoMembro(id, ativo) {
   return req(`/gestao/membros/${id}/ativo`, { method: 'POST', body: { ativo } })
+}
+
+// ============================ PROJETOS ============================
+
+// Equipe ativa (qualquer logado) — para escolher responsáveis de tarefa.
+export function listarEquipe() {
+  return req('/equipe')
+}
+
+export function listarProjetos() {
+  return req('/projetos')
+}
+
+export function criarProjeto(dados) {
+  return req('/projetos', { method: 'POST', body: dados })
+}
+
+export function obterProjeto(id) {
+  return req(`/projetos/${id}`)
+}
+
+export function atualizarProjeto(id, dados) {
+  return req(`/projetos/${id}`, { method: 'POST', body: dados })
+}
+
+export function removerProjeto(id) {
+  return req(`/projetos/${id}`, { method: 'DELETE' })
+}
+
+export function criarStatus(projetoId, dados) {
+  return req(`/projetos/${projetoId}/status`, { method: 'POST', body: dados })
+}
+
+export function removerStatus(id) {
+  return req(`/status/${id}`, { method: 'DELETE' })
+}
+
+export function criarEtiqueta(projetoId, dados) {
+  return req(`/projetos/${projetoId}/etiquetas`, { method: 'POST', body: dados })
+}
+
+export function criarMarco(projetoId, dados) {
+  return req(`/projetos/${projetoId}/marcos`, { method: 'POST', body: dados })
+}
+
+export function definirMarco(id, concluido) {
+  return req(`/marcos/${id}`, { method: 'POST', body: { concluido } })
+}
+
+export function removerMarco(id) {
+  return req(`/marcos/${id}`, { method: 'DELETE' })
+}
+
+// ============================ TAREFAS ============================
+
+export function listarTarefas(projetoId) {
+  return req(`/projetos/${projetoId}/tarefas`)
+}
+
+export function criarTarefa(projetoId, dados) {
+  return req(`/projetos/${projetoId}/tarefas`, { method: 'POST', body: dados })
+}
+
+export function obterTarefa(id) {
+  return req(`/tarefas/${id}`)
+}
+
+export function atualizarTarefa(id, dados) {
+  return req(`/tarefas/${id}`, { method: 'POST', body: dados })
+}
+
+export function removerTarefa(id) {
+  return req(`/tarefas/${id}`, { method: 'DELETE' })
+}
+
+export function minhasTarefas() {
+  return req('/minhas-tarefas')
+}
+
+export function historicoTarefa(id) {
+  return req(`/tarefas/${id}/historico`)
+}
+
+export function criarItemChecklist(tarefaId, texto) {
+  return req(`/tarefas/${tarefaId}/checklist`, { method: 'POST', body: { texto } })
+}
+
+export function marcarItemChecklist(id, feito) {
+  return req(`/checklist/${id}`, { method: 'POST', body: { feito } })
+}
+
+export function removerItemChecklist(id) {
+  return req(`/checklist/${id}`, { method: 'DELETE' })
+}
+
+// ============================ DOCUMENTAÇÃO ============================
+
+export function listarDocumentos() {
+  return req('/documentos')
+}
+
+export function criarDocumento(dados) {
+  return req('/documentos', { method: 'POST', body: dados })
+}
+
+export function obterDocumento(id) {
+  return req(`/documentos/${id}`)
+}
+
+export function salvarDocumento(id, dados) {
+  return req(`/documentos/${id}`, { method: 'POST', body: dados })
+}
+
+export function removerDocumento(id) {
+  return req(`/documentos/${id}`, { method: 'DELETE' })
+}
+
+export function listarVersoes(id) {
+  return req(`/documentos/${id}/versoes`)
+}
+
+export function obterVersao(id) {
+  return req(`/versoes/${id}`)
+}
+
+export function ligarDocumentoTarefas(id, tarefas) {
+  return req(`/documentos/${id}/tarefas`, { method: 'POST', body: { tarefas } })
+}
+
+// ============================ COMENTÁRIOS ============================
+
+export function listarComentarios(tipo, id) {
+  return req(`/comentarios/${tipo}/${id}`)
+}
+
+export function comentar(tipo, id, texto) {
+  return req(`/comentarios/${tipo}/${id}`, { method: 'POST', body: { texto } })
+}
+
+export function removerComentario(id) {
+  return req(`/comentarios/${id}`, { method: 'DELETE' })
+}
+
+// ============================ BUSCA / OKR / PAINEL ============================
+
+export function buscar(q) {
+  return req(`/busca?q=${encodeURIComponent(q)}`)
+}
+
+export function listarObjetivos() {
+  return req('/objetivos')
+}
+
+export function criarObjetivo(dados) {
+  return req('/objetivos', { method: 'POST', body: dados })
+}
+
+export function criarResultado(objetivoId, dados) {
+  return req(`/objetivos/${objetivoId}/resultados`, { method: 'POST', body: dados })
+}
+
+export function atualizarResultado(id, atual) {
+  return req(`/resultados/${id}`, { method: 'POST', body: { atual } })
+}
+
+export function removerObjetivo(id) {
+  return req(`/objetivos/${id}`, { method: 'DELETE' })
+}
+
+export function obterPainel() {
+  return req('/painel')
+}
+
+// ============================ ANEXOS ============================
+
+// A API devolve caminhos relativos já assinados; o front só prefixa o host.
+export function urlApi(caminho) {
+  return BASE + caminho
+}
+
+export function listarAnexos(tipo, id) {
+  return req(`/anexos/${tipo}/${id}`)
+}
+
+// Upload vai como multipart, não JSON — por isso não passa por req().
+// Importante: NÃO definir Content-Type à mão, senão o boundary do FormData se perde.
+export async function enviarAnexo(tipo, id, arquivo) {
+  const dados = new FormData()
+  dados.append('arquivo', arquivo)
+  const headers = {}
+  const t = getToken()
+  if (t) headers.Authorization = `Bearer ${t}`
+
+  const resp = await fetch(`${BASE}/anexos/${tipo}/${id}`, { method: 'POST', headers, body: dados })
+  const corpo = await resp.json().catch(() => ({}))
+  if (!resp.ok) throw new Error(corpo.erro || `Erro ${resp.status}`)
+  return corpo
+}
+
+export function removerAnexo(id) {
+  return req(`/anexos/${id}`, { method: 'DELETE' })
 }
