@@ -128,6 +128,30 @@ function registrar_historico(PDO $pdo, int $tarefaId, ?int $membroId, string $ac
         ]);
 }
 
+// ---- Notificações ----
+// Nunca notifica quem causou o evento: ninguém precisa ser avisado do que
+// acabou de fazer. Silencioso de propósito — falha aqui não pode derrubar a
+// ação principal que a pessoa pediu.
+function notificar_membros(PDO $pdo, array $destinos, int $autorId, string $tipo, string $titulo, ?string $texto = null, ?string $link = null, ?int $origemId = null): void
+{
+    $destinos = array_values(array_unique(array_filter(
+        array_map('intval', $destinos),
+        fn($id) => $id > 0 && $id !== $autorId,
+    )));
+    if (!$destinos) {
+        return;
+    }
+    try {
+        $st = $pdo->prepare('INSERT INTO notificacoes (membro_id, tipo, titulo, texto, link, origem_id, criado_em)
+                             VALUES (?, ?, ?, ?, ?, ?, ?)');
+        foreach ($destinos as $id) {
+            $st->execute([$id, $tipo, mb_substr($titulo, 0, 200), $texto, $link, $origemId, agora()]);
+        }
+    } catch (Throwable $e) {
+        // Notificação é acessório: não vale falhar a criação da tarefa por ela.
+    }
+}
+
 // ---- Status padrão de um projeto novo ----
 function semear_status(PDO $pdo, int $projetoId): void
 {

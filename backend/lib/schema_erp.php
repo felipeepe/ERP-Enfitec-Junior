@@ -242,6 +242,22 @@ function schema_erp(bool $sqlite): array
         PRIMARY KEY (evento_id, membro_id)
     )$fim";
 
+    // ---------- Notificações ----------
+    // Sem isto, tarefa atribuída na terça é descoberta no sábado, ou nunca.
+    // 'link' guarda o caminho do front para o item, evitando ter que remontar
+    // a URL a partir do tipo em cada lugar que lista notificação.
+    $t[] = "CREATE TABLE IF NOT EXISTS notificacoes (
+        id $pk,
+        membro_id $int NOT NULL,
+        tipo {$vc(30)} NOT NULL,
+        titulo {$vc(200)} NOT NULL,
+        texto $txt,
+        link {$vc(200)},
+        origem_id $int,
+        lida_em $dt,
+        criado_em $dt NOT NULL DEFAULT $agora
+    )$fim";
+
     // ---------- Cronômetro de tarefa ----------
     // Fica no servidor, não no navegador: se o cronômetro morasse no
     // localStorage, fechar a aba ou trocar de aparelho perderia trabalho real
@@ -289,6 +305,7 @@ function indices_erp(bool $sqlite): array
         "CREATE INDEX {$se}idx_tentativa ON tentativas_login(email, criado_em)",
         "CREATE INDEX {$se}idx_cronometro_membro ON cronometros(membro_id)",
         "CREATE INDEX {$se}idx_evento_data ON eventos(data)",
+        "CREATE INDEX {$se}idx_notif_membro ON notificacoes(membro_id, lida_em)",
         "CREATE INDEX {$se}idx_participante_membro ON evento_participantes(membro_id)",
         "CREATE INDEX {$se}idx_registro_tipo ON registros(membro_id, tipo_hora)",
         "CREATE INDEX {$se}idx_tarefa_projeto ON tarefas(projeto_id, status_id)",

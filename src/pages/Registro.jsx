@@ -4,6 +4,7 @@ import {
   listarProjetos, listarTarefas,
 } from '../lib/api'
 import { SETORES } from '../lib/setores'
+import RelatorioPessoal from '../components/RelatorioPessoal.jsx'
 import {
   hoje, mesAtual, ultimosDias, deslocarMes,
   rotuloMes, rotuloDia, formatarMinutos,
@@ -380,6 +381,8 @@ export default function Registro() {
           )}
         </section>
       </div>
+
+      <RelatorioPessoal aoNotificar={notificar} />
 
       {toast && <div className="toast" role="status">{toast}</div>}
     </>

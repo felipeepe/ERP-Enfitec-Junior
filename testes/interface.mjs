@@ -60,11 +60,15 @@ async function limpar() {
       }
     }
   } catch { /* limpeza é melhor-esforço */ }
+  // Remover manda para a lixeira; excluir de vez tira de lá. Sem o segundo
+  // passo, cada execução da suíte deixaria mais entulho acumulado para sempre.
   for (const id of criados.documentos) {
     await chamar(`/documentos/${id}`, { metodo: 'DELETE', token: sessao.token }).catch(() => {})
+    await chamar(`/lixeira/documento/${id}`, { metodo: 'DELETE', token: sessao.token }).catch(() => {})
   }
   for (const id of criados.projetos) {
     await chamar(`/projetos/${id}`, { metodo: 'DELETE', token: sessao.token }).catch(() => {})
+    await chamar(`/lixeira/projeto/${id}`, { metodo: 'DELETE', token: sessao.token }).catch(() => {})
   }
 }
 
@@ -121,10 +125,19 @@ try {
   await esperar(1600)
   verificar('indicadores da equipe carregam', (await pagina.$$('.stats--quatro .stat-card')).length === 4)
 
-  const antesProjetos = (await pagina.$$('.card-projeto')).length
   await clicarTexto('button', '+ Novo projeto')
-  await esperar(500)
-  await pagina.type('.form-projeto input', `[ui] Projeto ${Date.now() % 100000}`)
+  await esperar(600)
+
+  // Digita no campo de NOME explicitamente. Usar o primeiro input do formulário
+  // já deixou 20 projetos chamados "12345" no banco: o texto caiu noutro campo
+  // e a limpeza no fim não reconhecia o nome.
+  const NOME_PROJETO = `[ui] Projeto ${Date.now() % 100000}`
+  const campoNome = await pagina.$('.form-projeto input[placeholder*="Braço"], .form-projeto input')
+  await campoNome.click({ clickCount: 3 })
+  await campoNome.type(NOME_PROJETO)
+  verificar('nome do projeto foi digitado no campo certo',
+    (await pagina.$eval('.form-projeto input', (n) => n.value)) === NOME_PROJETO)
+
   await clicarTexto('.form-projeto button', 'Criar projeto')
   await esperar(2200)
   verificar('criar projeto pela tela abre o projeto', /\/projetos\/\d+/.test(pagina.url()), pagina.url())
@@ -394,9 +407,9 @@ try {
 
   await clicarTexto('.alternador button', 'Discussão')
   await esperar(1400)
-  verificar('aba de discussão do projeto abre', !!(await pagina.$('.linha-form input')))
-  await pagina.type('.panel .linha-form input', 'Mensagem de teste na discussão')
-  await clicarTexto('.panel .linha-form button', 'Enviar')
+  verificar('aba de discussão do projeto abre', !!(await pagina.$('.campo-comentario input')))
+  await pagina.type('.campo-comentario input', 'Mensagem de teste na discussão')
+  await clicarTexto('.campo-comentario button', 'Enviar')
   await esperar(1800)
   verificar('comentário no projeto aparece', (await pagina.$$('.discussao li')).length > 0)
   await foto('07-discussao')
@@ -546,6 +559,86 @@ try {
   await esperar(1600)
   verificar('compromisso removido some da grade',
     !(await pagina.$$eval('.cal-tarefa', (n) => n.some((x) => x.textContent.includes('Reunião criada pelo teste')))))
+
+  // ============================ Notificações e menções ============================
+  secao('Notificações e menções')
+  await pagina.goto(APP + `/projetos/${idProjeto}`, { waitUntil: 'networkidle2' })
+  await esperar(1800)
+  verificar('sino de notificações no topo', !!(await pagina.$('.sino-botao')))
+
+  await clicarTexto('.alternador button', 'Discussão')
+  await esperar(1400)
+  await pagina.type('.campo-comentario input', 'Bom dia @')
+  await esperar(900)
+  const sugestoes = await pagina.$$('.mencao-item')
+  verificar('digitar @ abre o seletor de pessoas', sugestoes.length > 0, `${sugestoes.length}`)
+  if (sugestoes.length) {
+    await sugestoes[0].click()
+    await esperar(500)
+    verificar('escolher insere a menção no texto',
+      (await pagina.$eval('.campo-comentario input', (n) => n.value)).includes('@'))
+    await clicarTexto('.campo-comentario button', 'Enviar')
+    await esperar(1800)
+    verificar('comentário com menção é publicado',
+      await pagina.$$eval('.discussao-texto', (n) => n.some((x) => x.textContent.includes('Bom dia'))))
+  }
+
+  await pagina.click('.sino-botao')
+  await esperar(1000)
+  verificar('painel do sino abre', !!(await pagina.$('.sino-painel')))
+  await pagina.keyboard.press('Escape')
+  await pagina.mouse.click(10, 400)
+  await esperar(600)
+
+  // ============================ Duplicar projeto ============================
+  secao('Duplicar projeto')
+  await clicarTexto('.alternador button', 'Quadro')
+  await esperar(800)
+  await clicarTexto('.acoes-projeto button', 'Configurar')
+  await esperar(900)
+  verificar('opção de usar como modelo aparece',
+    await pagina.$$eval('.bloco-titulo', (n) => n.some((x) => x.textContent.includes('Usar como modelo'))))
+
+  const urlAntes = pagina.url()
+  await pagina.evaluate(() => {
+    const f = [...document.querySelectorAll('form.linha-form')]
+      .find((x) => x.querySelector('button')?.textContent.trim() === 'Duplicar')
+    f.querySelector('input[type="text"], input:not([type])').value = ''
+    f.querySelector('button[type="submit"]').click()
+  })
+  await esperar(2500)
+  verificar('duplicar abre o projeto novo', pagina.url() !== urlAntes, pagina.url())
+  const idCopia = Number(pagina.url().match(/\/projetos\/(\d+)/)?.[1])
+  if (idCopia) criados.projetos.push(idCopia)
+  verificar('a cópia veio com as tarefas', (await pagina.$$('.cartao')).length > 0)
+
+  // ============================ Lixeira ============================
+  secao('Lixeira')
+  await pagina.goto(APP + '/lixeira', { waitUntil: 'networkidle2' })
+  await esperar(1600)
+  verificar('tela da lixeira carrega', !!(await pagina.$('.saudacao')))
+
+  // Apaga a cópia e confere que ela aparece e volta.
+  await chamar(`/projetos/${idCopia}`, { metodo: 'DELETE', token: sessao.token })
+  await pagina.reload({ waitUntil: 'networkidle2' })
+  await esperar(1600)
+  const naLixeira = await pagina.$$eval('.lixeira-rotulo', (n) => n.length)
+  verificar('item removido aparece na lixeira', naLixeira > 0, `${naLixeira} item(ns)`)
+
+  await pagina.evaluate(() => {
+    const b = [...document.querySelectorAll('.lixeira button')].find((x) => x.textContent.trim() === 'Restaurar')
+    if (b) b.click()
+  })
+  await esperar(2000)
+  verificar('restaurar tira o item da lixeira',
+    (await pagina.$$('.lixeira-rotulo')).length < naLixeira)
+
+  // ============================ Relatório e exportação ============================
+  secao('Relatório individual e exportação')
+  await pagina.goto(APP + '/documentacao', { waitUntil: 'networkidle2' })
+  await esperar(1600)
+  verificar('botão de exportar ZIP aparece',
+    await pagina.$$eval('.doc-acoes button', (n) => n.some((x) => x.textContent.includes('ZIP'))))
 
   // ============================ Regressão ============================
   secao('Regressão')

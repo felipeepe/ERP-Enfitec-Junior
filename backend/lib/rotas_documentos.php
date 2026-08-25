@@ -265,6 +265,25 @@ if (preg_match('#^/comentarios/(tarefa|documento|projeto)/(\d+)$#', $rota, $mm) 
     if ($tipo === 'tarefa') {
         registrar_historico($PDO, $alvo, (int) $m['id'], 'comentou');
     }
+
+    // Menções. Os ids vêm da lista que o front monta ao escolher a pessoa no
+    // seletor — não de tentar casar "@Nome" com o texto, que erraria com nome
+    // repetido, nome composto e acento.
+    $mencionados = campo_lista_int(corpo_json(), 'mencionados');
+    $onde = ['tarefa' => 'numa tarefa', 'projeto' => 'num projeto', 'documento' => 'numa página'][$tipo] ?? '';
+    $link = [
+        'documento' => '/documentacao?pagina=' . $alvo,
+        'projeto' => '/projetos/' . $alvo,
+    ][$tipo] ?? null;
+    if ($tipo === 'tarefa') {
+        $pt = $PDO->prepare('SELECT projeto_id FROM tarefas WHERE id = ?');
+        $pt->execute([$alvo]);
+        $linha = $pt->fetch();
+        $link = $linha ? '/projetos/' . (int) $linha['projeto_id'] . '?tarefa=' . $alvo : null;
+    }
+    notificar_membros($PDO, $mencionados, (int) $m['id'], 'mencao',
+        "Você foi mencionado $onde", mb_substr($texto, 0, 160), $link, $alvo);
+
     responder(['id' => $id], 201);
 }
 

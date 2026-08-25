@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getMembro, listarComentarios, comentar, removerComentario } from '../lib/api'
 import Avatar from './Avatar.jsx'
+import CampoComentario from './CampoComentario.jsx'
 
 // Fio de discussão reutilizável. Serve para projeto, tarefa e documento — o
 // backend deriva a permissão do que está sendo comentado, então o componente
@@ -8,7 +9,6 @@ import Avatar from './Avatar.jsx'
 export default function Discussao({ tipo, alvoId, titulo, subtitulo, aoMudar }) {
   const eu = getMembro()
   const [comentarios, setComentarios] = useState([])
-  const [texto, setTexto] = useState('')
   const [carregando, setCarregando] = useState(true)
   const [enviando, setEnviando] = useState(false)
 
@@ -22,14 +22,10 @@ export default function Discussao({ tipo, alvoId, titulo, subtitulo, aoMudar }) 
 
   useEffect(() => { carregar() }, [carregar])
 
-  async function enviar(e) {
-    e.preventDefault()
-    const conteudo = texto.trim()
-    if (!conteudo) return
+  async function enviar(conteudo, mencionados) {
     setEnviando(true)
     try {
-      await comentar(tipo, alvoId, conteudo)
-      setTexto('')
+      await comentar(tipo, alvoId, conteudo, mencionados)
       await carregar()
       aoMudar?.()
     } catch (err) {
@@ -88,13 +84,11 @@ export default function Discussao({ tipo, alvoId, titulo, subtitulo, aoMudar }) 
         </ul>
       )}
 
-      <form className="linha-form" onSubmit={enviar}>
-        <input className="input" placeholder="Escreva uma mensagem para a equipe…"
-          value={texto} onChange={(e) => setTexto(e.target.value)} />
-        <button className="btn btn-primary" type="submit" disabled={enviando}>
-          {enviando ? 'Enviando…' : 'Enviar'}
-        </button>
-      </form>
+      <CampoComentario
+        aoEnviar={enviar}
+        enviando={enviando}
+        placeholder="Escreva para a equipe… use @ para chamar alguém"
+      />
     </section>
   )
 }

@@ -3,16 +3,17 @@ import { useSearchParams } from 'react-router-dom'
 import {
   getMembro, listarDocumentos, criarDocumento, obterDocumento, salvarDocumento,
   removerDocumento, listarVersoes, obterVersao,
-  listarAnexos, enviarAnexo, removerAnexo, urlApi,
+  listarAnexos, enviarAnexo, removerAnexo, urlApi, exportarDocumentacao,
 } from '../lib/api'
+
+import { renderizarMarkdown } from '../lib/markdown'
+import { compararTextos, comContexto, resumoDiff } from '../lib/diff'
 
 function tamanhoLegivel(bytes) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
-import { renderizarMarkdown } from '../lib/markdown'
-import { compararTextos, comContexto, resumoDiff } from '../lib/diff'
 
 // Monta a hierarquia a partir da lista plana (pai_id).
 function montarArvore(paginas) {
@@ -178,7 +179,11 @@ export default function Documentacao() {
               <h2 className="panel-title">Páginas</h2>
               <p className="panel-sub">{paginas.length} no total</p>
             </div>
-            <button className="btn btn-ghost" onClick={() => novaPagina(null)}>+ Página</button>
+            <div className="doc-acoes">
+              <button className="btn btn-ghost" title="Baixar tudo em markdown"
+                onClick={() => exportarDocumentacao().catch((e) => alert(e.message))}>⬇ ZIP</button>
+              <button className="btn btn-ghost" onClick={() => novaPagina(null)}>+ Página</button>
+            </div>
           </div>
 
           {carregando ? (

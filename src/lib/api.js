@@ -431,3 +431,67 @@ export function definirParticipantes(id, participantes) {
 export function obterAgenda(de, ate, apenasMeus = false) {
   return req(`/agenda?de=${de}&ate=${ate}${apenasMeus ? '&meus=1' : ''}`)
 }
+
+// ============================ NOTIFICAÇÕES ============================
+
+export const EVENTO_NOTIFICACAO = 'rh:notificacao-mudou'
+
+export function listarNotificacoes() {
+  return req('/notificacoes')
+}
+
+export function contarNotificacoes() {
+  return req('/notificacoes/nao-lidas')
+}
+
+// Sem id, marca todas como lidas.
+export function marcarNotificacaoLida(id = null) {
+  return req('/notificacoes/lidas', { method: 'POST', body: id ? { id } : {} })
+}
+
+// ============================ LIXEIRA ============================
+
+export function listarLixeira() {
+  return req('/lixeira')
+}
+
+// Exclusão definitiva — só gestor, e só do que já está na lixeira.
+export function excluirDaLixeira(tipo, id) {
+  return req(`/lixeira/${tipo}/${id}`, { method: 'DELETE' })
+}
+
+export function restaurarDaLixeira(tipo, id) {
+  return req(`/lixeira/${tipo}/${id}/restaurar`, { method: 'POST' })
+}
+
+// ============================ EXTRAS ============================
+
+export function duplicarProjeto(id, dados) {
+  return req(`/projetos/${id}/duplicar`, { method: 'POST', body: dados })
+}
+
+export function meuRelatorio(de, ate) {
+  return req(`/meu-relatorio?de=${de}&ate=${ate}`)
+}
+
+// Exportação vem como arquivo, não JSON: baixa via link assinado pelo token
+// numa aba nova não funcionaria (o <a> não manda Authorization), então o
+// arquivo é buscado por fetch e entregue como blob.
+export async function exportarDocumentacao() {
+  const resp = await fetch(`${BASE}/documentos/exportar`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  })
+  if (!resp.ok) {
+    const erro = await resp.json().catch(() => ({}))
+    throw new Error(erro.erro || `Erro ${resp.status}`)
+  }
+  const blob = await resp.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `documentacao-enfitec-${new Date().toISOString().slice(0, 10)}.zip`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}

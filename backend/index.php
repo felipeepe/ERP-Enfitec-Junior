@@ -270,9 +270,40 @@ if ($rota === '/gestao/analise' && $metodo === 'GET') {
     );
     $porAtiv->execute($params);
 
+    // Por natureza da hora. Sem isto, a diretoria não consegue responder
+    // "quanto do nosso tempo foi para cliente e quanto foi para processo
+    // interno" — que é a pergunta que motivou categorizar a hora.
+    $porTipo = $PDO->prepare(
+        "SELECT tipo_hora, SUM(minutos) AS total FROM registros
+         WHERE data >= ? AND data < ?$filtroSetor GROUP BY tipo_hora ORDER BY total DESC"
+    );
+    $porTipo->execute($params);
+
+    // Horas técnicas por projeto: para onde o trabalho de cliente foi.
+    $porProjeto = $PDO->prepare(
+        "SELECT p.codigo, p.nome, SUM(r.minutos) AS total
+         FROM registros r JOIN projetos p ON p.id = r.projeto_id
+         WHERE r.data >= ? AND r.data < ?" . str_replace('setor', 'r.setor', $filtroSetor) . "
+         GROUP BY p.codigo, p.nome ORDER BY total DESC"
+    );
+    $porProjeto->execute($params);
+
+    $ROTULO_TIPO = [
+        'tecnica' => 'Técnica', 'administrativa' => 'Administrativa',
+        'evento' => 'Evento', 'estudo' => 'Estudo',
+    ];
+
     responder([
         'por_setor' => array_map(fn($l) => ['rotulo' => $l['setor'], 'total_minutos' => (int) $l['total']], $porSetor->fetchAll()),
         'por_atividade' => array_map(fn($l) => ['rotulo' => $l['atividade'], 'total_minutos' => (int) $l['total']], $porAtiv->fetchAll()),
+        'por_tipo' => array_map(fn($l) => [
+            'rotulo' => $ROTULO_TIPO[$l['tipo_hora']] ?? $l['tipo_hora'],
+            'total_minutos' => (int) $l['total'],
+        ], $porTipo->fetchAll()),
+        'por_projeto' => array_map(fn($l) => [
+            'rotulo' => $l['codigo'] . ' · ' . $l['nome'],
+            'total_minutos' => (int) $l['total'],
+        ], $porProjeto->fetchAll()),
     ]);
 }
 
@@ -340,6 +371,7 @@ require __DIR__ . '/lib/rotas_documentos.php';   // define documento_visivel(), 
 require __DIR__ . '/lib/rotas_anexos.php';
 require __DIR__ . '/lib/rotas_perfil.php';
 require __DIR__ . '/lib/rotas_agenda.php';
+require __DIR__ . '/lib/rotas_extras.php';
 
 // Nenhuma rota casou
 erro('Rota não encontrada: ' . $metodo . ' ' . $rota, 404);

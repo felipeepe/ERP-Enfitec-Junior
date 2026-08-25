@@ -168,11 +168,17 @@ if ($rota === '/eventos' && $metodo === 'POST') {
     // Quem criou já vai; os demais entram como convidados.
     $ins = $PDO->prepare('INSERT INTO evento_participantes (evento_id, membro_id, situacao) VALUES (?, ?, ?)');
     $ins->execute([$id, (int) $m['id'], 'vai']);
+    $convidados = [];
     foreach (campo_lista_int($d, 'participantes') as $membroId) {
         if ($membroId !== (int) $m['id']) {
             $ins->execute([$id, $membroId, 'convidado']);
+            $convidados[] = $membroId;
         }
     }
+
+    $quando = rtrim($data . ($inicio ? " às $inicio" : ' (dia todo)'));
+    notificar_membros($PDO, $convidados, (int) $m['id'], 'convite',
+        'Você foi convidado para um compromisso', "$titulo · $quando", '/agenda', $id);
 
     $st = $PDO->prepare('SELECT * FROM eventos WHERE id = ?');
     $st->execute([$id]);

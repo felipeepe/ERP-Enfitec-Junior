@@ -59,7 +59,7 @@ export default function Gestao() {
   const podeAvancar = mesView < mesAtual()
   const [setorView, setSetorView] = useState('') // '' = todos os setores
   const [resumo, setResumo] = useState([])
-  const [analise, setAnalise] = useState({ por_setor: [], por_atividade: [] })
+  const [analise, setAnalise] = useState({ por_setor: [], por_atividade: [], por_tipo: [], por_projeto: [] })
   const [membros, setMembros] = useState([])
   const [novo, setNovo] = useState({ email: '', nome: '', senha: '', setor: SETORES[0], role: 'membro' })
 
@@ -150,6 +150,10 @@ export default function Gestao() {
     let y = doc.lastAutoTable.finalY + 12
     y = desenharBarrasPDF(doc, 'Horas por setor', analise.por_setor, y)
     y = desenharBarrasPDF(doc, 'Horas por atividade', analise.por_atividade, y)
+    y = desenharBarrasPDF(doc, 'Horas por natureza', analise.por_tipo, y)
+    if (analise.por_projeto.length) {
+      y = desenharBarrasPDF(doc, 'Horas por projeto', analise.por_projeto, y)
+    }
     desenharBarrasPDF(doc, 'Horas por membro', porMembro.map((m) => ({ rotulo: m.nome, total_minutos: m.total })), y)
 
     const slug = setorView ? '-' + setorView.toLowerCase().normalize('NFD').replace(/[^\w]+/g, '-') : ''

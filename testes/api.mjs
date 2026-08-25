@@ -79,9 +79,12 @@ const semMes = await chamar('/gestao/resumo', { token: gestor.token })
 verificar('mês ausente devolve 400', semMes.status === 400)
 
 // Entradas malformadas não podem virar 500: o contrato da API é JSON.
+// Atenção: com nome numérico o servidor converte para texto e CRIA o projeto —
+// o que é o comportamento certo, mas deixa dado para trás se ninguém limpar.
 const tipoErrado = await chamar('/projetos', { metodo: 'POST', token: gestor.token, corpo: { nome: 12345 } })
 verificar('nome numérico não quebra o servidor', tipoErrado.status < 500,
   `HTTP ${tipoErrado.status}`)
+if (tipoErrado.dados?.id) criados.projetos.push(tipoErrado.dados.id)
 
 const arrayOndeEsperaTexto = await chamar('/projetos', {
   metodo: 'POST', token: gestor.token, corpo: { nome: ['a', 'b'] },
@@ -180,6 +183,7 @@ const filho = await chamar('/documentos', {
   metodo: 'POST', token: gestor.token, corpo: { titulo: `${MARCA} Subpágina`, pai_id: docId },
 })
 verificar('criar subpágina devolve 201', filho.status === 201)
+if (filho.dados?.id) criados.documentos.push(filho.dados.id)
 
 await chamar(`/documentos/${docId}`, {
   metodo: 'POST', token: gestor.token, corpo: { conteudo: '# Original\n\nSegunda versão.' },
@@ -568,6 +572,136 @@ const apagado = await chamar('/eventos?de=2026-09-01&ate=2026-09-30', { token: g
 verificar('compromisso removido some da agenda',
   !apagado.dados?.some((e) => e.id === eventoId))
 
+// ============================ Relatório por tipo de hora ============================
+secao('Relatório da gestão por natureza da hora')
+
+const analise = await chamar('/gestao/analise?mes=2026-08', { token: gestor.token })
+verificar('análise devolve a quebra por natureza da hora',
+  Array.isArray(analise.dados?.por_tipo))
+verificar('análise devolve as horas técnicas por projeto',
+  Array.isArray(analise.dados?.por_projeto))
+verificar('rótulo do tipo vem legível, não a chave do banco',
+  !analise.dados?.por_tipo?.some((t) => ['tecnica', 'administrativa'].includes(t.rotulo)))
+
+// ============================ Notificações ============================
+secao('Notificações')
+
+if (membro) {
+  const antes = (await chamar('/notificacoes/nao-lidas', { token: membro.token })).dados?.total ?? 0
+
+  const comResp = await chamar(`/projetos/${projetoId}/tarefas`, {
+    metodo: 'POST', token: gestor.token,
+    corpo: { titulo: `${MARCA} avisar`, responsaveis: [membro.membro.id] },
+  })
+  const depois = (await chamar('/notificacoes/nao-lidas', { token: membro.token })).dados?.total ?? 0
+  verificar('atribuir tarefa gera notificação para o responsável', depois === antes + 1)
+
+  await chamar(`/comentarios/tarefa/${comResp.dados.id}`, {
+    metodo: 'POST', token: gestor.token,
+    corpo: { texto: `${MARCA} @alguem confere?`, mencionados: [membro.membro.id] },
+  })
+  const comMencao = (await chamar('/notificacoes/nao-lidas', { token: membro.token })).dados?.total ?? 0
+  verificar('menção em comentário gera notificação', comMencao === depois + 1)
+
+  const lista = await chamar('/notificacoes', { token: membro.token })
+  verificar('notificação traz o link para o item',
+    lista.dados?.[0]?.link?.startsWith('/projetos/'), lista.dados?.[0]?.link)
+
+  // Quem causou o evento não deve receber aviso do que acabou de fazer.
+  const doAutor = await chamar('/notificacoes', { token: gestor.token })
+  verificar('quem age não é notificado da própria ação',
+    !doAutor.dados?.some((n) => n.origem_id === comResp.dados.id && !n.lida))
+
+  await chamar('/notificacoes/lidas', { metodo: 'POST', token: membro.token, corpo: {} })
+  verificar('marcar todas como lidas zera o contador',
+    (await chamar('/notificacoes/nao-lidas', { token: membro.token })).dados?.total === 0)
+
+  await chamar(`/tarefas/${comResp.dados.id}`, { metodo: 'DELETE', token: gestor.token })
+}
+
+// ============================ Duplicar projeto ============================
+secao('Duplicar projeto')
+
+const copia = await chamar(`/projetos/${projetoId}/duplicar`, {
+  metodo: 'POST', token: gestor.token,
+  corpo: { nome: `${MARCA} cópia`, com_tarefas: true, com_checklist: true },
+})
+verificar('duplicar devolve 201', copia.status === 201)
+const copiaId = copia.dados?.id
+if (copiaId) criados.projetos.push(copiaId)
+verificar('copiou as tarefas', copia.dados?.tarefas_copiadas > 0, `${copia.dados?.tarefas_copiadas}`)
+
+const detalheCopia = await chamar(`/projetos/${copiaId}`, { token: gestor.token })
+verificar('copiou as colunas do quadro', detalheCopia.dados?.status?.length === 4)
+
+const tarefasCopia = await chamar(`/projetos/${copiaId}/tarefas`, { token: gestor.token })
+verificar('a cópia NÃO herda prazos do ciclo anterior',
+  !tarefasCopia.dados?.some((t) => t.prazo))
+verificar('a cópia NÃO herda tarefas já concluídas',
+  !tarefasCopia.dados?.some((t) => t.concluida_em))
+verificar('numeração da cópia recomeça do 1',
+  tarefasCopia.dados?.some((t) => t.numero === 1))
+
+// ============================ Lixeira ============================
+secao('Lixeira')
+
+await chamar(`/projetos/${copiaId}`, { metodo: 'DELETE', token: gestor.token })
+const lixeira = await chamar('/lixeira', { token: gestor.token })
+verificar('projeto removido aparece na lixeira',
+  lixeira.dados?.projetos?.some((p) => p.id === copiaId))
+
+const restaurado = await chamar(`/lixeira/projeto/${copiaId}/restaurar`, {
+  metodo: 'POST', token: gestor.token,
+})
+verificar('restaurar devolve 200', restaurado.status === 200)
+
+const voltou = await chamar(`/projetos/${copiaId}/tarefas`, { token: gestor.token })
+verificar('as tarefas voltam junto com o projeto', voltou.dados?.length > 0, `${voltou.dados?.length}`)
+verificar('projeto restaurado sai da lixeira',
+  !(await chamar('/lixeira', { token: gestor.token })).dados?.projetos?.some((p) => p.id === copiaId))
+
+const inexistenteLixeira = await chamar('/lixeira/projeto/999999/restaurar', {
+  metodo: 'POST', token: gestor.token,
+})
+verificar('restaurar item que não está na lixeira devolve 404', inexistenteLixeira.status === 404)
+
+// Exclusão definitiva: sem ela a lixeira só cresce, e o soft delete vira um
+// jeito caro de nunca apagar nada.
+const emUso = await chamar(`/lixeira/projeto/${projetoId}`, { metodo: 'DELETE', token: gestor.token })
+verificar('não dá para excluir de vez algo que NÃO está na lixeira', emUso.status === 404)
+
+if (membro) {
+  await chamar(`/projetos/${copiaId}`, { metodo: 'DELETE', token: gestor.token })
+  const semPermissao = await chamar(`/lixeira/projeto/${copiaId}`, { metodo: 'DELETE', token: membro.token })
+  verificar('membro comum não exclui definitivamente (403)', semPermissao.status === 403)
+  await chamar(`/lixeira/projeto/${copiaId}/restaurar`, { metodo: 'POST', token: gestor.token })
+}
+
+// ============================ Relatório individual ============================
+secao('Relatório individual de horas')
+
+const relatorio = await chamar('/meu-relatorio?de=2026-01-01&ate=2026-12-31', { token: gestor.token })
+verificar('relatório individual carrega', relatorio.status === 200)
+verificar('traz a identificação de quem pediu', relatorio.dados?.membro?.email === CONTA_GESTOR.email)
+for (const bloco of ['por_tipo', 'por_setor', 'por_atividade', 'por_projeto', 'por_mes']) {
+  verificar(`relatório traz "${bloco}"`, Array.isArray(relatorio.dados?.[bloco]))
+}
+
+const invertido = await chamar('/meu-relatorio?de=2026-12-31&ate=2026-01-01', { token: gestor.token })
+verificar('intervalo invertido devolve 400', invertido.status === 400)
+
+// ============================ Exportar documentação ============================
+secao('Exportar documentação')
+
+const zip = await fetch(`${API}/documentos/exportar`, {
+  headers: { Authorization: `Bearer ${gestor.token}` },
+})
+verificar('exportação responde 200', zip.status === 200)
+verificar('vem como arquivo zip', (zip.headers.get('content-type') || '').includes('zip'))
+const bytes = new Uint8Array(await zip.arrayBuffer())
+// "PK" é a assinatura de um arquivo ZIP.
+verificar('conteúdo é um zip de verdade', bytes[0] === 0x50 && bytes[1] === 0x4b, `${bytes.length} bytes`)
+
 // ============================ Força bruta ============================
 secao('Freio contra tentativa em massa')
 
@@ -590,8 +724,21 @@ secao('Limpeza')
 
 for (const id of criados.anexos) await chamar(`/anexos/${id}`, { metodo: 'DELETE', token: gestor.token })
 for (const id of criados.objetivos) await chamar(`/objetivos/${id}`, { metodo: 'DELETE', token: gestor.token })
-for (const id of criados.documentos) await chamar(`/documentos/${id}`, { metodo: 'DELETE', token: gestor.token })
-for (const id of criados.projetos) await chamar(`/projetos/${id}`, { metodo: 'DELETE', token: gestor.token })
+
+// Remover manda para a lixeira; excluir de vez tira de lá. Sem o segundo passo,
+// cada execução da suíte deixaria mais entulho acumulado para sempre.
+for (const id of criados.documentos) {
+  await chamar(`/documentos/${id}`, { metodo: 'DELETE', token: gestor.token })
+  await chamar(`/lixeira/documento/${id}`, { metodo: 'DELETE', token: gestor.token })
+}
+for (const id of criados.projetos) {
+  await chamar(`/projetos/${id}`, { metodo: 'DELETE', token: gestor.token })
+  await chamar(`/lixeira/projeto/${id}`, { metodo: 'DELETE', token: gestor.token })
+}
+
+const lixeiraFinal = await chamar('/lixeira', { token: gestor.token })
+verificar('a suíte não deixa entulho na lixeira',
+  !lixeiraFinal.dados?.projetos?.some((p) => criados.projetos.includes(p.id)))
 
 const sobrou = await chamar(`/busca?q=${encodeURIComponent('automatizad')}`, { token: gestor.token })
 verificar('dados de teste foram removidos',

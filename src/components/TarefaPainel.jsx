@@ -6,6 +6,7 @@ import {
   listarAnexos, enviarAnexo, removerAnexo, urlApi,
   cronometroAtual, iniciarCronometro, EVENTO_CRONOMETRO,
 } from '../lib/api'
+import CampoComentario from './CampoComentario.jsx'
 
 // Tamanho de arquivo em unidade legível.
 function tamanhoLegivel(bytes) {
@@ -29,7 +30,6 @@ export default function TarefaPainel({ tarefaId, projeto, tarefasDoProjeto = [],
   const [historico, setHistorico] = useState([])
   const [aba, setAba] = useState('detalhes')
   const [novoItem, setNovoItem] = useState('')
-  const [novoComentario, setNovoComentario] = useState('')
   const [novaSub, setNovaSub] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [anexos, setAnexos] = useState([])
@@ -130,12 +130,8 @@ export default function TarefaPainel({ tarefaId, projeto, tarefasDoProjeto = [],
     aoFechar()
   }
 
-  async function enviarComentario(e) {
-    e.preventDefault()
-    const texto = novoComentario.trim()
-    if (!texto) return
-    await comentar('tarefa', tarefaId, texto)
-    setNovoComentario('')
+  async function enviarComentario(texto, mencionados) {
+    await comentar('tarefa', tarefaId, texto, mencionados)
     listarComentarios('tarefa', tarefaId).then(setComentarios)
   }
 
@@ -444,11 +440,10 @@ export default function TarefaPainel({ tarefaId, projeto, tarefasDoProjeto = [],
                 </li>
               ))}
             </ul>
-            <form className="linha-form" onSubmit={enviarComentario}>
-              <input className="input" placeholder="Escreva um comentário…" value={novoComentario}
-                onChange={(e) => setNovoComentario(e.target.value)} />
-              <button className="btn btn-primary" type="submit">Enviar</button>
-            </form>
+            <CampoComentario
+              aoEnviar={enviarComentario}
+              placeholder="Comente… use @ para chamar alguém"
+            />
           </div>
         )}
 

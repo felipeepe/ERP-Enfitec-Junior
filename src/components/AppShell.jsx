@@ -5,6 +5,7 @@ import { getMembro, logout, contarNaoLidas, EVENTO_MEMBRO } from '../lib/api'
 import BuscaGlobal from './BuscaGlobal.jsx'
 import Avatar from './Avatar.jsx'
 import BarraCronometro from './BarraCronometro.jsx'
+import Notificacoes from './Notificacoes.jsx'
 
 // Seções do ERP. O menu é o mesmo para todos os papéis — o que muda é o conteúdo
 // de cada aba (ver PainelDeHoras em App.jsx, que separa gestor de membro).
@@ -78,6 +79,8 @@ export default function AppShell({ children }) {
         </nav>
 
         <BuscaGlobal />
+
+        <Notificacoes />
 
         <div className="topbar-user">
           <button className="botao-perfil" onClick={() => navigate('/perfil')} title="Meu perfil">

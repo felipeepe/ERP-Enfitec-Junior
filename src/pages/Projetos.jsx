@@ -177,9 +177,14 @@ export default function Projetos() {
               Cada pessoa enxerga os projetos da própria seção de atuação.
             </p>
           </div>
-          <button className="btn btn-primary" onClick={() => setAbrindoForm((v) => !v)}>
-            {abrindoForm ? 'Cancelar' : '+ Novo projeto'}
-          </button>
+          <div className="doc-acoes">
+            <button className="btn btn-ghost" onClick={() => navigate('/lixeira')} title="Restaurar o que foi removido">
+              🗑 Lixeira
+            </button>
+            <button className="btn btn-primary" onClick={() => setAbrindoForm((v) => !v)}>
+              {abrindoForm ? 'Cancelar' : '+ Novo projeto'}
+            </button>
+          </div>
         </div>
 
         {abrindoForm && (

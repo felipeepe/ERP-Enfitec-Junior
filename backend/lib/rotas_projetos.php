@@ -170,11 +170,16 @@ if (preg_match('#^/projetos/(\d+)/tarefas$#', $rota, $mm) && $metodo === 'POST')
         ]);
     $id = (int) $PDO->lastInsertId();
 
-    foreach (campo_lista_int($d, 'responsaveis') as $membroId) {
+    $responsaveis = campo_lista_int($d, 'responsaveis');
+    foreach ($responsaveis as $membroId) {
         $PDO->prepare('INSERT INTO tarefa_responsaveis (tarefa_id, membro_id) VALUES (?, ?)')
             ->execute([$id, $membroId]);
     }
     registrar_historico($PDO, $id, (int) $m['id'], 'criou');
+    notificar_membros($PDO, $responsaveis, (int) $m['id'], 'tarefa_atribuida',
+        'Você foi colocado numa tarefa',
+        $projeto['codigo'] . ' · ' . $titulo,
+        '/projetos/' . (int) $projeto['id'] . '?tarefa=' . $id, $id);
 
     $st = $PDO->prepare('SELECT * FROM tarefas WHERE id = ?');
     $st->execute([$id]);
@@ -506,12 +511,27 @@ if (preg_match('#^/tarefas/(\d+)$#', $rota, $mm) && $metodo === 'POST') {
     // Coleções N:N: só mexe se vieram no corpo.
     if (array_key_exists('responsaveis', $d)) {
         $novos = campo_lista_int($d, 'responsaveis');
+        // Lê quem já era responsável ANTES de apagar, para avisar só quem entrou
+        // agora — quem já estava na tarefa não precisa receber de novo.
+        $antigos = array_map(
+            fn($r) => (int) $r['id'],
+            responsaveis_por_tarefa($PDO, [$id])[$id] ?? [],
+        );
+
         $PDO->prepare('DELETE FROM tarefa_responsaveis WHERE tarefa_id = ?')->execute([$id]);
         $ins = $PDO->prepare('INSERT INTO tarefa_responsaveis (tarefa_id, membro_id) VALUES (?, ?)');
         foreach ($novos as $membroId) {
             $ins->execute([$id, $membroId]);
         }
         registrar_historico($PDO, $id, (int) $m['id'], 'alterou', 'responsaveis', null, implode(',', $novos));
+
+        $projetoDaTarefa = $PDO->prepare('SELECT codigo FROM projetos WHERE id = ?');
+        $projetoDaTarefa->execute([(int) $t['projeto_id']]);
+        $codigo = $projetoDaTarefa->fetch()['codigo'] ?? '';
+        notificar_membros($PDO, array_diff($novos, $antigos), (int) $m['id'], 'tarefa_atribuida',
+            'Você foi colocado numa tarefa',
+            $codigo . ' · ' . $t['titulo'],
+            '/projetos/' . (int) $t['projeto_id'] . '?tarefa=' . $id, $id);
     }
     if (array_key_exists('etiquetas', $d)) {
         $PDO->prepare('DELETE FROM tarefa_etiquetas WHERE tarefa_id = ?')->execute([$id]);

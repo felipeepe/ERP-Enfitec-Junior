@@ -4,7 +4,7 @@ import {
   obterProjeto, listarTarefas, criarTarefa, atualizarTarefa,
   listarEquipe, criarStatus, removerStatus, criarEtiqueta,
   criarMarco, definirMarco, removerMarco,
-  removerProjeto, atualizarProjeto,
+  removerProjeto, atualizarProjeto, duplicarProjeto,
 } from '../lib/api'
 import { rotuloData, hoje, formatarMinutos } from '../lib/datas'
 import TarefaPainel from '../components/TarefaPainel.jsx'
@@ -40,6 +40,26 @@ export default function Projeto() {
   const [novoStatus, setNovoStatus] = useState('')
   const [novoMarco, setNovoMarco] = useState({ nome: '', data: '' })
   const [novaEtiqueta, setNovaEtiqueta] = useState({ nome: '', cor: '#1565c0' })
+  const [nomeCopia, setNomeCopia] = useState('')
+  const [copiaResponsaveis, setCopiaResponsaveis] = useState(false)
+
+  // Toda EJ repete a mesma estrutura a cada semestre. Duplicar substitui
+  // recorrência, que é armadilha, por uma fração do esforço.
+  async function duplicar(e) {
+    e.preventDefault()
+    try {
+      const novo = await duplicarProjeto(id, {
+        nome: nomeCopia.trim() || undefined,
+        com_tarefas: true,
+        com_checklist: true,
+        com_responsaveis: copiaResponsaveis,
+      })
+      notificar(`Copiado com ${novo.tarefas_copiadas} tarefa(s) ✓`)
+      navigate(`/projetos/${novo.id}`)
+    } catch (err) {
+      alert(err?.message || 'Não foi possível duplicar.')
+    }
+  }
   const [mostrarConfig, setMostrarConfig] = useState(false)
   const [vista, setVista] = useState('quadro')
   // Com 3 tarefas o quadro se explica; com 200, sem filtro ele é inutilizável.
@@ -289,8 +309,25 @@ export default function Projeto() {
             <button className="btn btn-primary" type="submit">Adicionar</button>
           </form>
 
+          <h3 className="bloco-titulo">Usar como modelo</h3>
+          <p className="panel-sub">
+            Copia colunas, etiquetas, tarefas e checklists para um projeto novo.
+            Prazos e conclusões não vêm junto — são do ciclo anterior.
+          </p>
+          <form onSubmit={duplicar} className="linha-form">
+            <input className="input" placeholder={`${projeto.nome} (cópia)`} value={nomeCopia}
+              onChange={(e) => setNomeCopia(e.target.value)} />
+            <label className="opcao-linha">
+              <input type="checkbox" checked={copiaResponsaveis}
+                onChange={(e) => setCopiaResponsaveis(e.target.checked)} />
+              <span>manter responsáveis</span>
+            </label>
+            <button className="btn btn-primary" type="submit">Duplicar</button>
+          </form>
+
           <h3 className="bloco-titulo">Zona de risco</h3>
           <button className="btn btn-perigo" onClick={apagarProjeto}>Arquivar projeto</button>
+          <p className="form-nota">Vai para a lixeira e pode ser restaurado.</p>
         </section>
       )}
 
